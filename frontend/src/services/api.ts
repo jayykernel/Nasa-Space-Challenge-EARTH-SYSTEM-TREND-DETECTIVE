@@ -1,0 +1,185 @@
+/** API service for communicating with the backend */
+
+const API_BASE = '/api/v1';
+
+export interface InvestigationRequest {
+  variables: string[];
+  geometry: GeoJSONGeometry;
+  time_range: { start: string; end: string };
+  temporal_resolution: 'daily' | 'monthly' | 'annual' | 'seasonal';
+}
+
+export interface GeoJSONGeometry {
+  type: 'Point' | 'Polygon' | 'MultiPolygon' | 'Feature' | 'FeatureCollection';
+  coordinates?: any;
+  geometry?: any;
+  properties?: any;
+  features?: any;
+}
+
+export interface InvestigationResponse {
+  investigation_id: string;
+  status: string;
+  message: string;
+}
+
+export interface InvestigationStatus {
+  investigation_id: string;
+  status: 'queued' | 'retrieving_data' | 'processing' | 'analyzing' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  message: string | null;
+}
+
+export interface InvestigationResults {
+  investigation_id: string;
+  variables: string[];
+  trend_statistics: Record<string, any>;
+  spatial_results: Record<string, any[]> | null;
+  data_quality: Record<string, any>;
+  methodology: string;
+  limitations: string[];
+  completed_at: string;
+}
+
+export interface InvestigationReport {
+  title: string;
+  investigation_id: string;
+  region_description: string;
+  variables: string[];
+  dataset_info: any[];
+  time_period: string;
+  observation_count: Record<string, number>;
+  units: Record<string, string>;
+  data_quality_summary: string;
+  trend_summary: Record<string, string>;
+  rate_of_change: Record<string, number>;
+  statistical_significance: Record<string, boolean>;
+  confidence_intervals: Record<string, number[]>;
+  temporal_chart_data: Record<string, any[]>;
+  spatial_visualization: string | null;
+  interpretation: string;
+  scientific_limitations: string[];
+  data_source_citation: string;
+  generated_at: string;
+}
+
+export interface VariableInfo {
+  key: string;
+  display_name: string;
+  description: string;
+  unit: string;
+  data_source: string;
+  available_coverage: string;
+  spatial_resolution: string;
+  scientific_explanation: string;
+}
+
+export interface DatasetInfo {
+  feature_id: string;
+  display_name: string;
+  mission: string;
+  dataset_short_name: string;
+  collection_id: string;
+  version: string;
+  variable_name: string;
+  units: string;
+  spatial_resolution: string;
+  temporal_resolution: string;
+  historical_coverage: string;
+  authentication_required: boolean;
+  access_endpoint: string;
+  processing_notes: string | null;
+  description: string;
+}
+
+class ApiService {
+  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Variables
+  async getVariables(): Promise<VariableInfo[]> {
+    return this.request<VariableInfo[]>('/variables');
+  }
+
+  async getVariable(key: string): Promise<VariableInfo> {
+    return this.request<VariableInfo>(`/variables/${key}`);
+  }
+
+  // Datasets
+  async getDatasets(): Promise<DatasetInfo[]> {
+    return this.request<DatasetInfo[]>('/datasets');
+  }
+
+  // Investigations
+  async startInvestigation(request: InvestigationRequest): Promise<InvestigationResponse> {
+    return this.request<InvestigationResponse>('/analysis', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getInvestigationStatus(id: string): Promise<InvestigationStatus> {
+    return this.request<InvestigationStatus>(`/analysis/${id}/status`);
+  }
+
+  async getInvestigationResults(id: string): Promise<InvestigationResults> {
+    return this.request<InvestigationResults>(`/analysis/${id}/results`);
+  }
+
+  async getInvestigationMap(id: string): Promise<any> {
+    return this.request<any>(`/analysis/${id}/map`);
+  }
+
+  async getInvestigationReport(id: string): Promise<InvestigationReport> {
+    return this.request<InvestigationReport>(`/analysis/${id}/report`);
+  }
+
+  async cancelInvestigation(id: string): Promise<{ investigation_id: string; status: string; message: string }> {
+    return this.request(`/analysis/${id}/cancel`, { method: 'POST' });
+  }
+
+  // Polling helper
+  async pollInvestigation(
+    investigationId: string,
+    onProgress: (status: InvestigationStatus) => void,
+    maxAttempts = 300,
+    intervalMs = 1000
+  ): Promise<InvestigationResults> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const status = await this.getInvestigationStatus(investigationId);
+      onProgress(status);
+
+      if (status.status === 'completed') {
+        return this.getInvestigationResults(investigationId);
+      }
+
+      if (status.status === 'failed') {
+        throw new Error(status.message || 'Investigation failed');
+      }
+
+      if (status.status === 'cancelled') {
+        throw new Error('Investigation cancelled');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error('Investigation timed out');
+  }
+}
+
+export const api = new ApiService();
