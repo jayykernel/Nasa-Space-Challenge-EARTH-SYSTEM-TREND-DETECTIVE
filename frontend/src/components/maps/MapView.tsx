@@ -270,7 +270,7 @@ const SpatialTrendLayer = () => {
 };
 
 export function MapView({ onGeometrySelect }: MapViewProps) {
-  const { investigation, ui } = useStore();
+  const { investigation, ui, setActivePanel } = useStore();
   const mapRef = useRef<Map | null>(null);
 
   const handleMapClick = (e: any) => {
@@ -279,6 +279,10 @@ export function MapView({ onGeometrySelect }: MapViewProps) {
 
   return (
     <div className="relative h-full w-full">
+      <div className="absolute top-4 left-4 z-[1000] inline-flex items-center rounded-xl border border-white/10 bg-[#081323]/90 p-1 shadow-xl backdrop-blur-xl">
+        <button onClick={() => setActivePanel('globe')} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white">◎ 3D Globe</button>
+        <button onClick={() => setActivePanel('map')} className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950">▧ 2D Map</button>
+      </div>
       <MapContainer
         ref={mapRef}
         center={[20, 0]}

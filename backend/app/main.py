@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, validator
 
 from app.connectors.base import get_connector, BaseConnector
 from app.registry.datasets import list_available_variables, list_available_datasets, get_dataset_for_variable, get_variable_info, get_dataset_info
-from app.processing.spatial import validate_geometry, extract_region, extract_grid_cell_time_series, spatial_trend_analysis, compute_grid_cell_areas, apply_land_mask, regrid_to_common
+from app.processing.spatial import validate_geometry, extract_region, extract_grid_cell_time_series, compute_grid_cell_areas, apply_land_mask, regrid_to_common
 from app.processing.analytics import comprehensive_trend_analysis, linear_regression_analysis, descriptive_statistics, generate_interpretation, generate_limitations, spatial_trend_analysis as spatial_analytics
 
 app = FastAPI(
@@ -54,13 +54,13 @@ class InvestigationStatusResponse(BaseModel):
 @app.get("/api/v1/datasets", response_model=list[dict[str, Any]])
 async def list_datasets():
     """List all available NASA datasets."""
-    return list_available_datasets()
+    return [dataset.dict() for dataset in list_available_datasets()]
 
 
 @app.get("/api/v1/variables", response_model=list[dict[str, Any]])
 async def list_variables():
     """List all available environmental variables."""
-    return list_available_variables()
+    return [variable.dict() for variable in list_available_variables()]
 
 
 @app.get("/api/v1/variables/{variable_key}")

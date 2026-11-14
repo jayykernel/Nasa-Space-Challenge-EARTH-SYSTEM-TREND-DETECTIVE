@@ -3,9 +3,10 @@ import React from 'react';
 interface HeaderProps {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  backendConnected: boolean;
 }
 
-export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
+export function Header({ onToggleSidebar, sidebarOpen, backendConnected }: HeaderProps) {
   return (
     <header className="h-14 border-b border-hypnen-border bg-hypnen-navy/90 backdrop-blur-sm flex items-center justify-between px-4 z-20">
       <div className="flex items-center gap-4">
@@ -39,9 +40,9 @@ export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
         </span>
 
         {/* Status indicator */}
-        <div className="flex items-center gap-2 text-sm text-hypnen-text-dim">
-          <span className="w-2 h-2 rounded-full bg-hypnen-green animate-pulse" />
-          <span>Backend Connected</span>
+        <div className="flex items-center gap-2 text-sm text-hypnen-text-dim" title={backendConnected ? 'Backend API is available' : 'Showing the built-in dataset list; the analysis API is unavailable'}>
+          <span className={`h-2 w-2 rounded-full ${backendConnected ? 'bg-hypnen-green animate-pulse' : 'bg-hypnen-yellow'}`} />
+          <span>{backendConnected ? 'Backend Connected' : 'Catalog Preview'}</span>
         </div>
       </div>
     </header>

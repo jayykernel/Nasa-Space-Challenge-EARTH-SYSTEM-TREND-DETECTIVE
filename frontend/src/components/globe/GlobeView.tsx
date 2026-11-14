@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Viewer, Entity, Cartesian3, Color, PolygonHierarchy, Rectangle, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, JulianDate, Ion, Math as CesiumMath, GeoJsonDataSource, CustomDataSource, CallbackProperty } from 'cesium';
+import { useEffect, useRef, useState } from 'react';
+import { Viewer, Entity, Cartesian3, Color, PolygonHierarchy, Rectangle, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, Math as CesiumMath, GeoJsonDataSource, UrlTemplateImageryProvider } from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { useStore } from '../../store/useStore';
 import type { GeoJSONGeometry } from '../../types';
@@ -9,80 +9,80 @@ interface GlobeViewProps {
 }
 
 export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
-  const { investigation, setGeometry, ui } = useStore();
+  const { investigation, setGeometry, setActivePanel } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
+  const selectionHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
   const drawHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
   const drawPositionsRef = useRef<Cartesian3[]>([]);
   const drawPolygonRef = useRef<Entity | null>(null);
   const selectedEntityRef = useRef<Entity | null>(null);
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [isBoundsMode, setIsBoundsMode] = useState(false);
+  const [isAutoRotating, setIsAutoRotating] = useState(false);
+  const [selectedRegionName, setSelectedRegionName] = useState('');
   const boundsStartRef = useRef<Cartesian3 | null>(null);
   const boundsRectangleRef = useRef<Entity | null>(null);
-
-  // Initialize Cesium Ion
-  useEffect(() => {
-    Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN || '';
-  }, []);
 
   // Initialize viewer
   useEffect(() => {
     if (!containerRef.current || viewerRef.current) return;
+    let cancelled = false;
 
-    const viewer = new Viewer(containerRef.current, {
-      animation: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      geocoder: false,
-      homeButton: false,
-      infoBox: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      timeline: false,
-      navigationHelpButton: false,
-      navigationInstructionsInitiallyVisible: false,
-      scene3DOnly: true,
-      shadows: false,
-      terrain: undefined,
-      terrainShadows: undefined,
-      mapProjection: undefined,
-      globe: undefined,
-      useDefaultRenderLoop: true,
-      targetFrameRate: 60,
-      showRenderLoopErrors: false,
-      contextOptions: {
-        webgl: {
-          alpha: false,
-          antialias: true,
-          preserveDrawingBuffer: true,
+    const initializeViewer = async () => {
+      const viewer = new Viewer(containerRef.current, {
+        animation: false,
+        baseLayerPicker: false,
+        fullscreenButton: false,
+        geocoder: false,
+        homeButton: false,
+        infoBox: false,
+        sceneModePicker: false,
+        selectionIndicator: false,
+        timeline: false,
+        navigationHelpButton: false,
+        navigationInstructionsInitiallyVisible: false,
+        scene3DOnly: true,
+        baseLayer: false,
+        shadows: false,
+        useDefaultRenderLoop: true,
+        targetFrameRate: 60,
+        showRenderLoopErrors: false,
+        contextOptions: {
+          webgl: {
+            alpha: false,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          },
         },
-      },
-      requestRenderMode: false,
-      maximumRenderTimeChange: 0,
-    });
+        requestRenderMode: false,
+        maximumRenderTimeChange: 0,
+      });
 
     // Configure globe
-    viewer.globe.enableLighting = true;
-    viewer.globe.showGroundAtmosphere = true;
-    viewer.globe.atmosphereBrightnessShift = -0.2;
-    viewer.globe.atmosphereHueShift = 0;
-    viewer.globe.atmosphereSaturationShift = -0.1;
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.showGroundAtmosphere = true;
+    viewer.scene.globe.atmosphereBrightnessShift = -0.2;
+    viewer.scene.globe.atmosphereHueShift = 0;
+    viewer.scene.globe.atmosphereSaturationShift = -0.1;
+    viewer.scene.globe.baseColor = Color.fromCssColorString('#274563');
+    viewer.scene.backgroundColor = Color.fromCssColorString('#030812');
 
     // Remove default imagery and add dark theme
     viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(
-      new (await import('cesium')).UrlTemplateImageryProvider({
-        url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png',
-        credit: 'Stadia Maps',
-        maximumLevel: 19,
-        subdomains: 'abcd',
-      })
-    );
+    const imageryProvider = new UrlTemplateImageryProvider({
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      credit: 'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+      maximumLevel: 19,
+    });
+    imageryProvider.errorEvent.addEventListener((error) => {
+      console.warn('Satellite tile request failed', { message: error.message, x: error.x, y: error.y, level: error.level });
+    });
+    viewer.imageryLayers.addImageryProvider(imageryProvider);
 
     // Set initial camera view
     viewer.camera.setView({
-      destination: Cartesian3.fromDegrees(0, 20, 15000000),
+      destination: Cartesian3.fromDegrees(12, 20, 16500000),
       orientation: {
         heading: 0,
         pitch: -CesiumMath.PI_OVER_TWO,
@@ -90,50 +90,85 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       },
     });
 
-    // Add country boundaries
-    addCountryBoundaries(viewer);
+    viewerRef.current = viewer;
+
+    // Add clickable country outlines above the satellite imagery.
+    const countryLayer = await addCountryBoundaries(viewer);
+    if (cancelled || viewer.isDestroyed()) return;
+    if (investigation.geometry) updateSelectedPolygon(viewer, investigation.geometry);
 
     // Add coordinate display
     addCoordinateDisplay(viewer);
 
-    viewerRef.current = viewer;
-
     // Handle selection events
     const handler = new ScreenSpaceEventHandler(viewer.canvas);
+    selectionHandlerRef.current = handler;
     handler.setInputAction((movement) => {
       const picked = viewer.scene.pick(movement.position);
-      if (defined(picked) && picked.id && picked.id !== selectedEntityRef.current && picked.id !== drawPolygonRef.current && picked.id !== boundsRectangleRef.current) {
-        handleEntitySelection(picked.id);
+      const pickedEntity = defined(picked) ? (picked.id as Entity | undefined) : undefined;
+      if (!drawHandlerRef.current && pickedEntity?.polygon && countryLayer?.entities.contains(pickedEntity)) {
+        handleEntitySelection(pickedEntity);
       }
     }, ScreenSpaceEventType.LEFT_CLICK);
 
+    };
+
+    void initializeViewer();
     return () => {
-      handler.destroy();
-      viewer.destroy();
+      cancelled = true;
+      selectionHandlerRef.current?.destroy();
+      selectionHandlerRef.current = null;
+      viewerRef.current?.destroy();
       viewerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !isAutoRotating) return;
+    return viewer.scene.preRender.addEventListener(() => viewer.camera.rotateRight(0.00018));
+  }, [isAutoRotating]);
+
+  useEffect(() => {
+    const handleRegionName = (event: Event) => setSelectedRegionName((event as CustomEvent<{ name: string }>).detail.name);
+    window.addEventListener('globe-region-name', handleRegionName);
+    return () => window.removeEventListener('globe-region-name', handleRegionName);
   }, []);
 
   const addCountryBoundaries = async (viewer: Viewer) => {
     try {
       const dataSource = await GeoJsonDataSource.load(
-        'https://unpkg.com/world-atlas@2.0.2/countries-110m.json',
+        'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson',
         {
-          stroke: Color.fromCssColorString('#2a323c'),
-          strokeWidth: 1.5,
-          fill: Color.fromCssColorString('#161b22').withAlpha(0.3),
+          stroke: Color.fromCssColorString('#c4e9ff').withAlpha(0.58),
+          strokeWidth: 1,
+          fill: Color.TRANSPARENT,
           clampToGround: true,
         }
       );
+      if (viewer.isDestroyed()) {
+        return null;
+      }
       viewer.dataSources.add(dataSource);
+      dataSource.entities.values.forEach((entity) => {
+        if (entity.polygon) {
+          entity.polygon.material = Color.WHITE.withAlpha(0.015);
+          entity.polygon.outline = true;
+          entity.polygon.outlineColor = Color.fromCssColorString('#c4e9ff').withAlpha(0.58);
+          entity.polygon.outlineWidth = 1;
+          entity.polygon.height = 0;
+        }
+      });
+      return dataSource;
     } catch (err) {
       console.warn('Could not load country boundaries:', err);
+      return null;
     }
   };
 
   const addCoordinateDisplay = (viewer: Viewer) => {
     const coordsDiv = document.createElement('div');
-    coordsDiv.className = 'fixed bottom-4 left-4 z-20 bg-hypnen-navy/90 backdrop-blur-sm border border-hypnen-border rounded-lg px-3 py-2 text-xs font-mono text-hypnen-text-dim pointer-events-none';
+    coordsDiv.className = 'absolute bottom-20 left-4 z-20 bg-hypnen-navy/90 backdrop-blur-sm border border-hypnen-border rounded-lg px-3 py-2 text-xs font-mono text-hypnen-text-dim pointer-events-none';
     coordsDiv.style.fontFamily = 'JetBrains Mono, monospace';
     coordsDiv.textContent = 'Lon: 0.000°, Lat: 0.000°';
     viewer.container.appendChild(coordsDiv);
@@ -149,21 +184,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
   };
 
   const handleEntitySelection = (entity: Entity) => {
-    // Clear previous selection
-    if (selectedEntityRef.current) {
-      selectedEntityRef.current.polygon!.material = Color.fromCssColorString('#00d4ff').withAlpha(0.3);
-      selectedEntityRef.current.polygon!.outlineColor = Color.fromCssColorString('#00d4ff');
-    }
-
-    // Highlight selected entity
-    entity.polygon!.material = Color.fromCssColorString('#00d4ff').withAlpha(0.5);
-    entity.polygon!.outlineColor = Color.fromCssColorString('#00d4ff');
-    entity.polygon!.outlineWidth = 3;
-
-    selectedEntityRef.current = entity;
-
-    // Extract geometry from entity
-    if (entity.polygon && entity.polygon.hierarchy) {
+    if (entity.polygon?.hierarchy && viewerRef.current) {
       const hierarchy = entity.polygon.hierarchy.getValue(viewerRef.current!.clock.currentTime);
       if (hierarchy && hierarchy.positions) {
         const positions = hierarchy.positions;
@@ -174,11 +195,14 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
         // Close the polygon
         coordinates.push(coordinates[0]);
 
-        const geometry: GeoJSONGeometry = {
-          type: 'Polygon',
-          coordinates: [coordinates],
-        };
+        const props = entity.properties;
+        const name = props?.ADMIN?.getValue(viewerRef.current.clock.currentTime)
+          ?? props?.name?.getValue(viewerRef.current.clock.currentTime)
+          ?? props?.NAME?.getValue(viewerRef.current.clock.currentTime)
+          ?? 'Selected region';
+        const geometry: GeoJSONGeometry = { type: 'Polygon', coordinates: [coordinates] };
 
+        setSelectedRegionName(String(name));
         setGeometry(geometry);
         onGeometrySelect?.(geometry);
       }
@@ -216,7 +240,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       });
 
       selectedEntityRef.current = entity;
-      viewer.zoomTo(entity);
+      viewer.flyTo(entity, { duration: 1.4 });
     } else if (geometry.type === 'MultiPolygon' && geometry.coordinates) {
       // Handle MultiPolygon - create multiple entities
       geometry.coordinates.forEach((polygonCoords, idx) => {
@@ -238,7 +262,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
 
         if (idx === 0) selectedEntityRef.current = entity;
       });
-      viewer.zoomTo(viewer.entities);
+      viewer.flyTo(viewer.entities, { duration: 1.4 });
     }
   };
 
@@ -516,16 +540,33 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
+      <div className="absolute left-4 top-4 z-20 inline-flex items-center rounded-xl border border-white/10 bg-[#081323]/90 p-1 shadow-xl backdrop-blur-xl">
+        <button onClick={() => setActivePanel('globe')} className="flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20"><span aria-hidden="true">◎</span> 3D Globe</button>
+        <button onClick={() => setActivePanel('map')} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"><span aria-hidden="true">▧</span> 2D Map</button>
+      </div>
+      <div className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#081323]/90 shadow-xl backdrop-blur-xl">
+        <button onClick={() => viewerRef.current?.camera.flyHome(1.2)} className="globe-control" title="Reset globe view" aria-label="Reset globe view">⌂</button>
+        <button onClick={() => viewerRef.current?.camera.zoomIn(1200000)} className="globe-control text-xl" title="Zoom in" aria-label="Zoom in">+</button>
+        <button onClick={() => viewerRef.current?.camera.zoomOut(1200000)} className="globe-control text-xl" title="Zoom out" aria-label="Zoom out">−</button>
+        <button onClick={() => setIsAutoRotating((value) => !value)} className="globe-control" title={isAutoRotating ? 'Pause globe rotation' : 'Auto-rotate globe'} aria-label={isAutoRotating ? 'Pause globe rotation' : 'Auto-rotate globe'}>⟳</button>
+      </div>
+      <div className="absolute bottom-5 left-1/2 z-20 w-[min(92%,440px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#081323]/90 px-4 py-3 shadow-2xl backdrop-blur-xl">
+        {investigation.geometry ? <div className="flex items-start gap-3"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-sm text-emerald-300">✓</span><div className="min-w-0 flex-1"><div className="text-sm font-semibold text-white">Region selected{selectedRegionName ? `: ${selectedRegionName}` : ''}</div><div className="mt-1 text-xs text-slate-400">{formatGeometrySummary(investigation.geometry)}</div></div><button onClick={() => { setGeometry(null); setSelectedRegionName(''); window.dispatchEvent(new CustomEvent('globe-clear-selection')); }} className="text-lg leading-none text-slate-400 transition hover:text-white" aria-label="Clear selected region">×</button></div> : <div className="flex items-center gap-3 text-sm text-slate-300"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-400/15 text-sky-300">◎</span><span><strong className="font-semibold text-white">Choose a region</strong><span className="text-slate-400"> · click a country, search a place, or draw on the globe</span></span></div>}
+      </div>
+
       {/* Mode Indicators */}
       {isDrawMode && (
-        <div className="fixed top-20 left-4 right-4 z-30 animate-slide-up">
+        <div className="absolute top-20 left-4 right-4 z-30 animate-slide-up">
           <div className="max-w-md mx-auto card border-hypnen-accent/50 bg-hypnen-accent/10 p-3 flex items-center gap-3">
             <svg className="w-5 h-5 text-hypnen-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
             </svg>
             <span className="text-sm font-medium text-hypnen-text">Draw Mode: Click to add vertices. Double-click to complete.</span>
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent('globe-clear-drawing'))}
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('globe-clear-drawing'));
+                window.dispatchEvent(new CustomEvent('globe-draw-mode', { detail: { enable: false } }));
+              }}
               className="ml-auto px-3 py-1 text-xs bg-hypnen-card border border-hypnen-border rounded hover:border-hypnen-red/30 text-hypnen-red transition-colors"
             >
               Cancel
@@ -535,18 +576,19 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       )}
 
       {isBoundsMode && (
-        <div className="fixed top-20 left-4 right-4 z-30 animate-slide-up">
+        <div className="absolute top-20 left-4 right-4 z-30 animate-slide-up">
           <div className="max-w-md mx-auto card border-hypnen-blue/50 bg-hypnen-blue/10 p-3 flex items-center gap-3">
             <svg className="w-5 h-5 text-hypnen-blue flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 16h18M3 8h18m0 0V4a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2h14a2 2 0 002-2V8" />
             </svg>
             <span className="text-sm font-medium text-hypnen-text">Rectangle Mode: Click and drag to draw region.</span>
+            <button onClick={() => window.dispatchEvent(new CustomEvent('globe-bounds-mode', { detail: { enable: false } }))} className="ml-auto rounded border border-hypnen-border px-3 py-1 text-xs text-slate-300 hover:text-white">Cancel</button>
           </div>
         </div>
       )}
 
       {/* Legend */}
-      <div className="fixed bottom-4 right-4 z-20 card p-3 min-w-[180px]">
+      <div className="absolute bottom-5 right-4 z-20 card p-3 min-w-[180px] bg-[#081323]/85 backdrop-blur-xl">
         <div className="text-xs font-medium text-hypnen-text mb-2">Map Layers</div>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-2 text-hypnen-text-dim">
@@ -569,7 +611,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       </div>
 
       {/* View Controls */}
-      <div className="fixed top-20 right-4 z-20 flex flex-col gap-2">
+      <div className="hidden">
         <button
           onClick={() => viewerRef.current?.camera.flyTo({
             destination: Cartesian3.fromDegrees(0, 20, 15000000),
@@ -600,4 +642,20 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       </div>
     </div>
   );
+}
+
+function formatGeometrySummary(geometry: GeoJSONGeometry) {
+  const points: number[][] = [];
+  const visit = (value: any) => {
+    if (Array.isArray(value) && value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') points.push(value as number[]);
+    else if (Array.isArray(value)) value.forEach(visit);
+  };
+  visit(geometry.coordinates ?? geometry.geometry?.coordinates);
+  if (!points.length) return `${geometry.type} region`;
+  const bounds = points.reduce((value, [lon, lat]) => ({
+    west: Math.min(value.west, lon), east: Math.max(value.east, lon),
+    south: Math.min(value.south, lat), north: Math.max(value.north, lat),
+  }), { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity });
+  const format = (value: number, axis: 'lat' | 'lon') => `${Math.abs(value).toFixed(1)}°${axis === 'lat' ? (value < 0 ? 'S' : 'N') : (value < 0 ? 'W' : 'E')}`;
+  return `Coordinates: ${format(bounds.south, 'lat')} to ${format(bounds.north, 'lat')} · ${format(bounds.west, 'lon')} to ${format(bounds.east, 'lon')}`;
 }

@@ -7,6 +7,21 @@ import { ResultsPanel } from './components/dashboard/ResultsPanel';
 import { Header } from './components/layout/Header';
 import { LoadingOverlay } from './components/ui/LoadingOverlay';
 import { ErrorToast } from './components/ui/ErrorToast';
+import type { VariableInfo } from './types';
+
+const FALLBACK_VARIABLES: VariableInfo[] = [
+  { key: 'precipitation', display_name: 'Rainfall / Precipitation', description: 'Precipitation rate from satellite observations.', unit: 'mm/day', data_source: 'GPM IMERG', available_coverage: '2000-06 to present', spatial_resolution: '0.1°', scientific_explanation: 'Satellite estimate of rain and other precipitation.' },
+  { key: 'temperature', display_name: 'Air Temperature', description: 'Near-surface air temperature at 2 meters.', unit: '°C', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Long-term atmospheric reanalysis of near-surface temperature.' },
+  { key: 'specific_humidity', display_name: 'Specific Humidity', description: 'Mass of water vapor per mass of moist air.', unit: 'kg/kg', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Measure of atmospheric moisture content.' },
+  { key: 'relative_humidity', display_name: 'Relative Humidity', description: 'Ratio of actual to saturation water vapor pressure.', unit: '%', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Measure of how close air is to saturation.' },
+  { key: 'soil_moisture', display_name: 'Soil Moisture', description: 'Volumetric water content in the upper soil layer.', unit: 'm³/m³', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of water stored in surface soils.' },
+  { key: 'evapotranspiration', display_name: 'Evapotranspiration', description: 'Water flux from the land surface to the atmosphere.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Combined evaporation from soil and transpiration from plants.' },
+  { key: 'runoff', display_name: 'Surface Runoff', description: 'Water flowing over the land surface.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of surface water runoff.' },
+  { key: 'subsurface_runoff', display_name: 'Subsurface Runoff (Baseflow)', description: 'Water flow through the subsurface.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of subsurface flow to streams.' },
+  { key: 'terrestrial_water_storage', display_name: 'Terrestrial Water Storage Anomaly', description: 'Changes in total water stored on land.', unit: 'cm equivalent water height', data_source: 'GRACE / GRACE-FO', available_coverage: '2002-04 to present', spatial_resolution: '0.5°', scientific_explanation: 'Satellite observation of integrated land water storage changes.' },
+  { key: 'ndvi', display_name: 'NDVI', description: 'Satellite-derived vegetation greenness index.', unit: 'Dimensionless', data_source: 'MODIS', available_coverage: '2000-02 to present', spatial_resolution: '1 km', scientific_explanation: 'Vegetation index derived from red and near-infrared reflectance.' },
+  { key: 'evi', display_name: 'EVI', description: 'Enhanced satellite-derived vegetation index.', unit: 'Dimensionless', data_source: 'MODIS', available_coverage: '2000-02 to present', spatial_resolution: '1 km', scientific_explanation: 'Vegetation index designed to reduce atmospheric and soil effects.' },
+];
 
 function App() {
   const {
@@ -20,7 +35,7 @@ function App() {
     setAvailableVariables,
   } = useStore();
 
-  const [variablesLoaded, setVariablesLoaded] = useState(false);
+  const [backendConnected, setBackendConnected] = useState(false);
 
   // Load available variables on mount
   useEffect(() => {
@@ -30,37 +45,39 @@ function App() {
         if (response.ok) {
           const variables = await response.json();
           setAvailableVariables(variables);
-          setVariablesLoaded(true);
+          setBackendConnected(true);
         } else {
-          setError('Failed to load available variables');
+          setAvailableVariables(FALLBACK_VARIABLES);
+          setBackendConnected(false);
         }
       } catch (err) {
-        setError('Failed to connect to backend API');
+        setAvailableVariables(FALLBACK_VARIABLES);
+        setBackendConnected(false);
       }
     }
     loadVariables();
   }, [setAvailableVariables, setError]);
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden">
-      <Header onToggleSidebar={() => setSidebarOpen(!ui.sidebarOpen)} sidebarOpen={ui.sidebarOpen} />
+    <div className="h-full min-h-0 w-full flex flex-col overflow-hidden">
+      <Header onToggleSidebar={() => setSidebarOpen(!ui.sidebarOpen)} sidebarOpen={ui.sidebarOpen} backendConnected={backendConnected} />
 
-      <main className="flex-1 flex overflow-hidden relative">
+      <main className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Left Sidebar - Investigation Controls */}
         {ui.sidebarOpen && (
-          <aside className="w-80 flex-shrink-0 border-r border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up z-10">
+          <aside className="z-10 w-80 min-h-0 flex-shrink-0 border-r border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up">
             <InvestigationSidebar />
           </aside>
         )}
 
         {/* Center - Globe/Map View */}
-        <section className="flex-1 relative min-w-0 overflow-hidden">
+        <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {ui.activePanel === 'globe' && <GlobeView />}
           {ui.activePanel === 'map' && <MapView />}
         </section>
 
         {/* Right Panel - Results */}
-        <aside className="w-96 flex-shrink-0 border-l border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up z-10">
+        <aside className="z-10 hidden w-96 min-h-0 flex-shrink-0 border-l border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up xl:block">
           <ResultsPanel />
         </aside>
       </main>

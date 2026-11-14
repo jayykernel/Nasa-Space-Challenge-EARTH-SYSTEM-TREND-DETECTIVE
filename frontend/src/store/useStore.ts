@@ -144,8 +144,20 @@ export const useStore = create<StoreState>()(
       name: 'earth-trend-detective-store',
       partialize: (state) => ({
         investigation: state.investigation,
-        ui: { sidebarOpen: state.ui.sidebarOpen },
+        // Preserve only the sidebar preference while keeping the UI state shape
+        // complete for hydration (in particular, activePanel must stay defined).
+        ui: { ...initialState.ui, sidebarOpen: state.ui.sidebarOpen },
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AppState>;
+        return {
+          ...currentState,
+          ...persisted,
+          investigation: { ...currentState.investigation, ...persisted.investigation },
+          ui: { ...currentState.ui, ...persisted.ui },
+          data: { ...currentState.data, ...persisted.data },
+        };
+      },
     }
   )
 );

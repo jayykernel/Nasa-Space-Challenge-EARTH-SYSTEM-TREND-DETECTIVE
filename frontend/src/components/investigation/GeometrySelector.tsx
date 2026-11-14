@@ -53,6 +53,7 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
         coordinates: result.geojson.coordinates,
       };
       setGeometry(geometry);
+      window.dispatchEvent(new CustomEvent('globe-region-name', { detail: { name: result.display_name.split(',')[0] } }));
       setSearchQuery(result.display_name);
       setSearchResults([]);
     } else if (result.boundingbox) {
@@ -69,6 +70,7 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
         ]],
       };
       setGeometry(geometry);
+      window.dispatchEvent(new CustomEvent('globe-region-name', { detail: { name: result.display_name.split(',')[0] } }));
       setSearchQuery(result.display_name);
       setSearchResults([]);
     }
@@ -76,13 +78,27 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
 
   const handleDrawMode = () => {
     setSelectionMode('draw');
+    window.dispatchEvent(new CustomEvent('globe-bounds-mode', { detail: { enable: false } }));
     // Notify globe to enter draw mode
     window.dispatchEvent(new CustomEvent('globe-draw-mode', { detail: { enable: true } }));
   };
 
   const handleBoundsMode = () => {
     setSelectionMode('bounds');
+    window.dispatchEvent(new CustomEvent('globe-draw-mode', { detail: { enable: false } }));
     window.dispatchEvent(new CustomEvent('globe-bounds-mode', { detail: { enable: true } }));
+  };
+
+  const activateMode = (mode: 'search' | 'draw' | 'bounds' | 'admin') => {
+    setSelectionMode(mode);
+    useStore.getState().setActivePanel('globe');
+    if (mode === 'draw') handleDrawMode();
+    else if (mode === 'bounds') handleBoundsMode();
+    else {
+      window.dispatchEvent(new CustomEvent('globe-draw-mode', { detail: { enable: false } }));
+      window.dispatchEvent(new CustomEvent('globe-bounds-mode', { detail: { enable: false } }));
+      if (mode === 'admin') handleAdminMode();
+    }
   };
 
   const handleAdminMode = () => {
@@ -120,7 +136,7 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
         ].map((mode) => (
           <button
             key={mode.id}
-            onClick={() => setSelectionMode(mode.id as any)}
+            onClick={() => activateMode(mode.id as 'search' | 'draw' | 'bounds' | 'admin')}
             className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition-all ${
               selectionMode === mode.id
                 ? 'bg-hypnen-cyan/20 text-hypnen-cyan'
