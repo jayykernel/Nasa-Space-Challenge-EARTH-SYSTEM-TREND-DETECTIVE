@@ -80,25 +80,13 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     });
     viewer.imageryLayers.addImageryProvider(imageryProvider);
 
-    // Set initial camera view
-    viewer.camera.setView({
-      destination: Cartesian3.fromDegrees(12, 20, 16500000),
-      orientation: {
-        heading: 0,
-        pitch: -CesiumMath.PI_OVER_TWO,
-        roll: 0,
-      },
-    });
-
     viewerRef.current = viewer;
 
     // Add clickable country outlines above the satellite imagery.
     const countryLayer = await addCountryBoundaries(viewer);
     if (cancelled || viewer.isDestroyed()) return;
+    viewer.camera.flyHome(1.2);
     if (investigation.geometry) updateSelectedPolygon(viewer, investigation.geometry);
-
-    // Add coordinate display
-    addCoordinateDisplay(viewer);
 
     // Handle selection events
     const handler = new ScreenSpaceEventHandler(viewer.canvas);
@@ -164,23 +152,6 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       console.warn('Could not load country boundaries:', err);
       return null;
     }
-  };
-
-  const addCoordinateDisplay = (viewer: Viewer) => {
-    const coordsDiv = document.createElement('div');
-    coordsDiv.className = 'absolute bottom-20 left-4 z-20 bg-hypnen-navy/90 backdrop-blur-sm border border-hypnen-border rounded-lg px-3 py-2 text-xs font-mono text-hypnen-text-dim pointer-events-none';
-    coordsDiv.style.fontFamily = 'JetBrains Mono, monospace';
-    coordsDiv.textContent = 'Lon: 0.000°, Lat: 0.000°';
-    viewer.container.appendChild(coordsDiv);
-
-    viewer.camera.changed.addEventListener(() => {
-      const cartographic = viewer.camera.positionCartographic;
-      if (cartographic) {
-        const lon = CesiumMath.toDegrees(cartographic.longitude).toFixed(3);
-        const lat = CesiumMath.toDegrees(cartographic.latitude).toFixed(3);
-        coordsDiv.textContent = `Lon: ${lon}°, Lat: ${lat}°`;
-      }
-    });
   };
 
   const handleEntitySelection = (entity: Entity) => {
@@ -586,29 +557,6 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
           </div>
         </div>
       )}
-
-      {/* Legend */}
-      <div className="absolute bottom-5 right-4 z-20 card p-3 min-w-[180px] bg-[#081323]/85 backdrop-blur-xl">
-        <div className="text-xs font-medium text-hypnen-text mb-2">Map Layers</div>
-        <div className="space-y-2 text-xs">
-          <div className="flex items-center gap-2 text-hypnen-text-dim">
-            <div className="w-4 h-4 rounded border border-hypnen-border/50 bg-hypnen-card" />
-            <span>Countries</span>
-          </div>
-          <div className="flex items-center gap-2 text-hypnen-cyan">
-            <div className="w-4 h-4 rounded bg-hypnen-cyan/40 border border-hypnen-cyan" />
-            <span>Selected Region</span>
-          </div>
-          <div className="flex items-center gap-2 text-hypnen-accent">
-            <div className="w-4 h-4 rounded border-2 border-hypnen-accent" />
-            <span>Drawing</span>
-          </div>
-          <div className="flex items-center gap-2 text-hypnen-blue">
-            <div className="w-4 h-4 rounded bg-hypnen-blue/40 border border-hypnen-blue" />
-            <span>Rectangle Selection</span>
-          </div>
-        </div>
-      </div>
 
       {/* View Controls */}
       <div className="hidden">
