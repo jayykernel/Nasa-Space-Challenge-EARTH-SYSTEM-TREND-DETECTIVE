@@ -33,6 +33,10 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // Keep Vite's bundle separate from Cesium's case-sensitive `Assets` directory.
+    // On case-insensitive developer filesystems, `assets` otherwise merges with it
+    // and the deployed HTML points at paths that are not present on Linux hosts.
+    assetsDir: 'app-assets',
     sourcemap: false,
   },
 })
