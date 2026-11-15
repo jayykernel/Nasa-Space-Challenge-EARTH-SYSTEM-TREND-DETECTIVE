@@ -34,9 +34,9 @@ A React/Cesium dashboard with a FastAPI science workflow for regional precipitat
 
 The frontend can be deployed as a Vite static app on Vercel from the `frontend/` directory. `frontend/vercel.json` enables direct links to saved investigations. Set the Vercel build-time environment variable `VITE_API_BASE_URL` to the deployed backend origin (for example, `https://your-api.onrender.com`, without `/api/v1`).
 
-The analysis API needs a persistent host and disk: it downloads multi-gigabyte NASA archives and stores job state and reusable source files on disk. `render.yaml` and `backend/Dockerfile` define a Render web service with a 1 CPU / 2 GB plan and a 20 GB persistent disk. In Render, set `CORS_ORIGINS` to the exact Vercel site origin and enter the NASA Earthdata credentials; add `NOAA_CDO_TOKEN` if NOAA analysis is needed. Do not commit secrets to this repository.
+The `render.yaml` blueprint deploys the API on Render's free web service tier, so a payment card is not required. In Render, set `CORS_ORIGINS` to the exact Vercel site origin and enter rotated NASA Earthdata credentials privately; add `NOAA_CDO_TOKEN` if NOAA analysis is needed. Never commit secrets to this repository.
 
-The configured Render resources are currently estimated at about **US$30/month** before tax: US$25/month for 1 CPU / 2 GB and US$5/month for the 20 GB disk. The Vercel Hobby plan is free for personal projects. Confirm current provider pricing before creating resources.
+The free Render service sleeps after inactivity and has limited memory and CPU. Its filesystem is ephemeral, so downloaded NASA archives, job state and investigation results can be lost when the service restarts or redeploys. Long NASA analyses can exceed free-tier memory or execution limits. This setup is suitable for a shareable demonstration; reliable long-running analyses with durable results require a paid persistent backend and storage.
 
 ## Investigation workflow
 
