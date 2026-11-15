@@ -84,6 +84,7 @@ export interface VariableInfo {
   available_coverage: string;
   spatial_resolution: string;
   scientific_explanation: string;
+  dataset_ids: string[];
 }
 
 export interface DatasetInfo {
