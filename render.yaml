@@ -12,6 +12,8 @@ services:
         value: /tmp/earth-data
       - key: CORS_ORIGINS
         value: https://rushing-juniper-kyg03sf.tmp.now
+      - key: CORS_ORIGIN_REGEX
+        value: '^https://rushing-juniper-kyg03sf-[a-z0-9]+-jay-78ad\.vercel\.app$'
       - key: NASA_EARTHDATA_USERNAME
         sync: false
       - key: NASA_EARTHDATA_PASSWORD

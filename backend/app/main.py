@@ -23,7 +23,8 @@ async def lifespan(_app):
 
 app=FastAPI(title="Earth System Trend Detective API",description="Earth science investigation API",version="1.0.0",lifespan=lifespan)
 origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS","http://localhost:3000,http://127.0.0.1:3000").split(",") if origin.strip()]
-app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=True,allow_methods=["GET","POST","OPTIONS"],allow_headers=["*"])
+origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None
+app.add_middleware(CORSMiddleware,allow_origins=origins,allow_origin_regex=origin_regex,allow_credentials=True,allow_methods=["GET","POST","OPTIONS"],allow_headers=["*"])
 app.include_router(datasets_router,prefix="/api/v1")
 app.include_router(providers_router,prefix="/api/v1")
 app.include_router(analysis_router,prefix="/api/v1")
