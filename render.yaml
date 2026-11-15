@@ -4,17 +4,14 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: 1c-2g
+    # Free compute avoids any payment method, but has low memory/CPU and no durable disk.
+    plan: free
     healthCheckPath: /api/v1/health
-    disk:
-      name: earth-observation-data
-      mountPath: /var/data
-      sizeGB: 20
     envVars:
       - key: EARTH_DATA_DIR
-        value: /var/data
+        value: /tmp/earth-data
       - key: CORS_ORIGINS
-        sync: false
+        value: https://rushing-juniper-kyg03sf.tmp.now
       - key: NASA_EARTHDATA_USERNAME
         sync: false
       - key: NASA_EARTHDATA_PASSWORD
