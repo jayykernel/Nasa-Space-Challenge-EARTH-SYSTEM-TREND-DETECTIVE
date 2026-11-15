@@ -115,8 +115,24 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const error = await response.json().catch(() => ({ detail: 'The server returned an unreadable response.' }));
+      const detail = error?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((item: unknown) => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object' && 'msg' in item) {
+              const issue = item as { msg: string; loc?: Array<string | number> };
+              const location = issue.loc?.filter((part) => part !== 'body').join(' → ');
+              return location ? `${location}: ${issue.msg}` : issue.msg;
+            }
+            return JSON.stringify(item);
+          }).join('; ')
+        : typeof detail === 'string'
+          ? detail
+          : detail && typeof detail === 'object'
+            ? JSON.stringify(detail)
+            : `Request failed (HTTP ${response.status})`;
+      throw new Error(message);
     }
 
     return response.json();

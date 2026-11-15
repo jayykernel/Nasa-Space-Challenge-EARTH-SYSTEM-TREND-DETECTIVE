@@ -1,6 +1,33 @@
 import { useStore } from '../../store/useStore';
 import { api } from '../../services/api';
 
+function getGeometryIssue(geometry: { type: string; coordinates?: any; geometry?: any } | null) {
+  if (!geometry) return 'Select a region before starting the analysis.';
+  const shape = geometry.type === 'Feature' ? geometry.geometry : geometry;
+  if (!shape || !['Polygon', 'MultiPolygon'].includes(shape.type)) {
+    return 'Select an area on the globe. A single point is not large enough for regional precipitation analysis.';
+  }
+
+  const points: number[][] = [];
+  const collect = (value: any) => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+      points.push(value);
+      return;
+    }
+    value.forEach(collect);
+  };
+  collect(shape.coordinates);
+  if (points.length < 4) return 'The selected area is incomplete. Draw or choose a larger region.';
+
+  const longitudes = points.map(([longitude]) => longitude);
+  const latitudes = points.map(([, latitude]) => latitude);
+  if (Math.max(...longitudes) - Math.min(...longitudes) < 1e-6 || Math.max(...latitudes) - Math.min(...latitudes) < 1e-6) {
+    return 'The selected area has no width or height. Drag across a region on the globe, or choose a country or place.';
+  }
+  return null;
+}
+
 export function RunAnalysisButton() {
   const {
     investigation,
@@ -22,6 +49,12 @@ export function RunAnalysisButton() {
     const request = buildInvestigationRequest();
     if (!request) {
       setError('Please select at least one variable and a geographical region');
+      return;
+    }
+
+    const geometryIssue = getGeometryIssue(request.geometry);
+    if (geometryIssue) {
+      setError(geometryIssue);
       return;
     }
 
