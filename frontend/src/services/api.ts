@@ -1,7 +1,7 @@
 /** API service for communicating with the backend */
 
 const configuredApiOrigin = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '');
-const API_BASE = `${configuredApiOrigin || ''}/api/v1`;
+const API_BASE = `${configuredApiOrigin || 'https://earth-system-trend-api.onrender.com'}/api/v1`;
 
 export interface InvestigationRequest {
   variables: string[];
