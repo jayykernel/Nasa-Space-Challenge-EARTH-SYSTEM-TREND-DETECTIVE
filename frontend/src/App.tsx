@@ -40,16 +40,10 @@ function App() {
   useEffect(() => {
     async function loadVariables() {
       try {
-        const response = await fetch('/api/v1/variables');
-        if (response.ok) {
-          const variables = await response.json();
-          setAvailableVariables(variables);
-          setBackendConnected(true);
-        } else {
-          setAvailableVariables(FALLBACK_VARIABLES);
-          setBackendConnected(false);
-        }
-      } catch (err) {
+        const variables = await api.getVariables();
+        setAvailableVariables(variables);
+        setBackendConnected(true);
+      } catch {
         setAvailableVariables(FALLBACK_VARIABLES);
         setBackendConnected(false);
       }
