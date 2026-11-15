@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import type { GeoJSONGeometry } from '../../types';
+import indiaStatesUrl from '../../assets/india-states.geojson?url';
 
 interface GeometrySelectorProps {
   selectedGeometry: GeoJSONGeometry | null;
@@ -12,7 +13,30 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectionMode, setSelectionMode] = useState<'search' | 'draw' | 'bounds' | 'admin'>('search');
   const [isSearching, setIsSearching] = useState(false);
+  const [adminRegions, setAdminRegions] = useState<Array<{ properties: { name: string; iso: string }; geometry: GeoJSONGeometry }>>([]);
+  const [adminQuery, setAdminQuery] = useState('');
+  const [adminLoadError, setAdminLoadError] = useState('');
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const filteredAdminRegions = useMemo(() => adminRegions.filter((feature) =>
+    `${feature.properties.name} ${feature.properties.iso}`.toLowerCase().includes(adminQuery.toLowerCase())
+  ), [adminRegions, adminQuery]);
+
+  useEffect(() => {
+    if (selectionMode !== 'admin' || adminRegions.length) return;
+    let cancelled = false;
+    fetch(indiaStatesUrl)
+      .then((response) => {
+        if (!response.ok) throw new Error('Could not load administrative boundaries');
+        return response.json();
+      })
+      .then((collection) => {
+        if (!cancelled) setAdminRegions(collection.features || []);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAdminLoadError(error instanceof Error ? error.message : 'Could not load boundaries');
+      });
+    return () => { cancelled = true; };
+  }, [selectionMode, adminRegions.length]);
 
   const handleSearch = async (query: string) => {
     if (query.length < 3) {
@@ -103,8 +127,6 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
 
   const handleAdminMode = () => {
     setSelectionMode('admin');
-    // In a real app, this would load admin boundaries
-    alert('Administrative boundary selection coming soon. Use Draw mode for custom polygons.');
   };
 
   const handleClearGeometry = () => {
@@ -115,7 +137,7 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-hypnen-text">Geographical Region</h3>
+        <div><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-sky-300/70">Step 2</p><h3 className="mt-1 text-[16px] font-semibold tracking-tight text-slate-100">Choose a region</h3></div>
         {selectedGeometry && (
           <button
             onClick={handleClearGeometry}
@@ -127,23 +149,22 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
       </div>
 
       {/* Selection Mode Tabs */}
-      <div className="flex gap-1 bg-hypnen-card rounded-lg p-1">
+      <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.07] bg-black/15 p-1">
         {[
-          { id: 'search', label: 'Search', icon: '🔍' },
-          { id: 'draw', label: 'Draw', icon: '✏️' },
-          { id: 'bounds', label: 'Rectangle', icon: '⬜' },
-          { id: 'admin', label: 'Admin', icon: '🏛️' },
+          { id: 'search', label: 'Search' },
+          { id: 'draw', label: 'Draw' },
+          { id: 'bounds', label: 'Box' },
+          { id: 'admin', label: 'States' },
         ].map((mode) => (
           <button
             key={mode.id}
             onClick={() => activateMode(mode.id as 'search' | 'draw' | 'bounds' | 'admin')}
-            className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition-all ${
+            className={`flex items-center justify-center rounded-lg px-1.5 py-2 text-[10px] font-medium transition-all ${
               selectionMode === mode.id
-                ? 'bg-hypnen-cyan/20 text-hypnen-cyan'
-                : 'text-hypnen-text-dim hover:text-hypnen-text'
+                ? 'bg-sky-300/15 text-sky-100 shadow-sm'
+                : 'text-slate-500 hover:bg-white/[0.04] hover:text-slate-200'
             }`}
           >
-            <span>{mode.icon}</span>
             <span>{mode.label}</span>
           </button>
         ))}
@@ -157,8 +178,8 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for a location (e.g., 'Amazon Basin', 'California', 'Sahara')"
-              className="w-full px-4 py-2.5 bg-hypnen-card border border-hypnen-border rounded-lg text-hypnen-text placeholder-hypnen-text-dim focus:border-hypnen-cyan focus:outline-none focus:ring-1 focus:ring-hypnen-cyan"
+              placeholder="Search a place, region, or country"
+              className="w-full rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 py-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-sky-300/40 focus:outline-none focus:ring-2 focus:ring-sky-300/10"
             />
             {isSearching && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -252,18 +273,22 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
             </svg>
             <span className="font-medium">Administrative Boundaries</span>
           </div>
-          <p className="text-sm text-hypnen-text">
-            Select from predefined administrative boundaries (countries, states, watersheds).
-          </p>
-          <select className="w-full px-3 py-2 bg-hypnen-card border border-hypnen-border rounded-lg text-hypnen-text">
-            <option value="">Select a boundary type...</option>
-            <option value="countries">Countries (Natural Earth)</option>
-            <option value="states">US States</option>
-            <option value="provinces">Canadian Provinces</option>
-            <option value="basins">Major River Basins</option>
-            <option value="ecoregions">WWF Ecoregions</option>
-          </select>
-          <p className="text-xs text-hypnen-text-dim">Administrative boundary selection coming soon.</p>
+          <p className="text-sm text-hypnen-text">Choose an India state or union territory. Use Search or Draw for other regions.</p>
+          <input value={adminQuery} onChange={(event) => setAdminQuery(event.target.value)} placeholder="Filter states and territories" aria-label="Filter administrative boundaries" className="w-full rounded-lg border border-hypnen-border bg-hypnen-card px-3 py-2 text-sm text-hypnen-text placeholder-hypnen-text-dim" />
+          {adminLoadError && <p role="alert" className="text-xs text-hypnen-red">{adminLoadError}</p>}
+          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {filteredAdminRegions.map((feature) => (
+              <button key={feature.properties.iso} onClick={() => {
+                setGeometry(feature.geometry);
+                window.dispatchEvent(new CustomEvent('globe-region-name', { detail: { name: feature.properties.name } }));
+                setSearchQuery(`${feature.properties.name}, India`);
+              }} className="flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm text-hypnen-text transition hover:border-hypnen-teal/30 hover:bg-hypnen-card">
+                <span>{feature.properties.name}</span><span className="font-mono text-xs text-hypnen-text-dim">{feature.properties.iso}</span>
+              </button>
+            ))}
+            {!adminLoadError && !filteredAdminRegions.length && <p className="px-3 py-2 text-xs text-hypnen-text-dim">Loading available boundaries…</p>}
+          </div>
+          <p className="text-xs text-hypnen-text-dim">geoBoundaries gbOpen · CC BY 4.0</p>
         </div>
       )}
 
@@ -276,8 +301,10 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
             </svg>
             Selected Region
           </h4>
-          <div className="font-mono text-xs text-hypnen-text bg-hypnen-navy p-3 rounded overflow-x-auto">
-            {JSON.stringify(selectedGeometry, null, 2)}
+          <div className="rounded-lg bg-hypnen-navy p-3 text-xs text-hypnen-text-dim">
+            <div className="flex justify-between"><span>Geometry</span><span className="font-mono text-hypnen-text">{selectedGeometry.type}</span></div>
+            <div className="mt-2 flex justify-between"><span>Boundary points</span><span className="font-mono text-hypnen-text">{countVertices(selectedGeometry.coordinates)}</span></div>
+            <div className="mt-2 truncate"><span>Approximate extent: </span><span className="font-mono">{formatBounds(selectedGeometry.coordinates)}</span></div>
           </div>
           <div className="mt-2 flex gap-2">
             <button
@@ -293,4 +320,24 @@ export function GeometrySelector({ selectedGeometry }: GeometrySelectorProps) {
       )}
     </div>
   );
+}
+
+function countVertices(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  if (value.length >= 2 && value.every((part) => typeof part === 'number')) return 1;
+  return value.reduce<number>((total, item) => total + countVertices(item), 0);
+}
+
+function formatBounds(coordinates: unknown): string {
+  const points: number[][] = [];
+  const collect = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') points.push(value as number[]);
+    else value.forEach(collect);
+  };
+  collect(coordinates);
+  if (!points.length) return 'Unavailable';
+  const longitudes = points.map(([longitude]) => longitude);
+  const latitudes = points.map(([, latitude]) => latitude);
+  return `${Math.min(...longitudes).toFixed(2)}°–${Math.max(...longitudes).toFixed(2)}°, ${Math.min(...latitudes).toFixed(2)}°–${Math.max(...latitudes).toFixed(2)}°`;
 }

@@ -1,9 +1,10 @@
-import React from 'react';
 import { useStore } from '../../store/useStore';
+import { api } from '../../services/api';
 
 export function RunAnalysisButton() {
   const {
     investigation,
+    data,
     ui,
     buildInvestigationRequest,
     setLoading,
@@ -15,6 +16,7 @@ export function RunAnalysisButton() {
   } = useStore();
 
   const canRun = investigation.variables.length > 0 && investigation.geometry !== null;
+  const usesNoaa = investigation.datasetId === 'noaa_ghcn_monthly_precipitation';
 
   const handleRunAnalysis = async () => {
     const request = buildInvestigationRequest();
@@ -33,90 +35,31 @@ export function RunAnalysisButton() {
     });
 
     try {
-      // Start investigation
-      const response = await fetch('/api/v1/analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to start investigation');
+      const created = await api.startInvestigation(request);
+      const results = await api.pollInvestigation(created.investigation_id, setInvestigationStatus);
+      setInvestigationResults(results);
+      setLoading(false);
+      setActivePanel('results');
+      try {
+        const report = await api.getInvestigationReport(created.investigation_id);
+        setInvestigationReport(report);
+      } catch {
+        setError('Your measurements are ready. The written report could not be loaded.');
       }
-
-      const { investigation_id } = await response.json();
-
-      // Poll for status
-      await pollInvestigationStatus(investigation_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setLoading(false);
     }
   };
 
-  const pollInvestigationStatus = async (investigationId: string) => {
-    const maxAttempts = 300; // 5 minutes at 1 second intervals
-    let attempts = 0;
-
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      attempts++;
-
-      try {
-        const response = await fetch(`/api/v1/analysis/${investigationId}/status`);
-        if (!response.ok) throw new Error('Failed to get status');
-
-        const status = await response.json();
-        setInvestigationStatus(status);
-
-        if (status.status === 'completed') {
-          // Fetch results
-          const resultsResponse = await fetch(`/api/v1/analysis/${investigationId}/results`);
-          if (resultsResponse.ok) {
-            const results = await resultsResponse.json();
-            setInvestigationResults(results);
-          }
-
-          // Fetch report
-          const reportResponse = await fetch(`/api/v1/analysis/${investigationId}/report`);
-          if (reportResponse.ok) {
-            const report = await reportResponse.json();
-            setInvestigationReport(report);
-          }
-
-          setLoading(false);
-          setActivePanel('results');
-          return;
-        }
-
-        if (status.status === 'failed') {
-          setLoading(false);
-          setError(status.message || 'Investigation failed');
-          return;
-        }
-
-        if (status.status === 'cancelled') {
-          setLoading(false);
-          return;
-        }
-      } catch (err) {
-        console.error('Polling error:', err);
-      }
-    }
-
-    setLoading(false);
-    setError('Investigation timed out. Please try again.');
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-hypnen-text">Run Analysis</h3>
+        <div><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-sky-300/70">Step 4</p><h3 className="mt-1 text-[16px] font-semibold tracking-tight text-slate-100">Review and analyze</h3></div>
       </div>
 
       {/* Validation Status */}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         <div className={`flex items-center gap-3 p-3 rounded-lg ${
           investigation.variables.length > 0
             ? 'bg-hypnen-green/10 border border-hypnen-green/30'
@@ -170,10 +113,10 @@ export function RunAnalysisButton() {
       <button
         onClick={handleRunAnalysis}
         disabled={!canRun || ui.loading}
-        className={`w-full py-4 px-6 rounded-lg font-semibold text-lg transition-all flex items-center justify-center gap-3 ${
+        className={`flex w-full items-center justify-center gap-2.5 rounded-xl px-5 py-3.5 text-[13px] font-semibold transition-all ${
           canRun && !ui.loading
-            ? 'bg-gradient-to-r from-hypnen-cyan to-hypnen-blue text-hypnen-navy hover:from-hypnen-cyan/90 hover:to-hypnen-blue/90 glow-cyan'
-            : 'bg-hypnen-border text-hypnen-text-dim cursor-not-allowed'
+            ? 'border border-sky-200/25 bg-gradient-to-r from-sky-300 to-cyan-300 text-slate-950 shadow-[0_10px_28px_rgba(14,165,233,0.16)] hover:brightness-105'
+            : 'cursor-not-allowed border border-white/[0.07] bg-white/[0.05] text-slate-500'
         }`}
       >
         {ui.loading ? (
@@ -186,7 +129,7 @@ export function RunAnalysisButton() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span>Run Analysis</span>
+            <span>Run precipitation analysis</span>
           </>
         )}
       </button>
@@ -196,16 +139,16 @@ export function RunAnalysisButton() {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-hypnen-text-dim">Progress</span>
-            <span className="text-hypnen-cyan font-mono">{ui.data.investigationStatus?.progress || 0}%</span>
+            <span className="text-hypnen-cyan font-mono">{data.investigationStatus?.progress || 0}%</span>
           </div>
           <div className="w-full h-2 bg-hypnen-border rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-hypnen-cyan to-hypnen-blue transition-all duration-300"
-              style={{ width: `${ui.data.investigationStatus?.progress || 0}%` }}
+              style={{ width: `${data.investigationStatus?.progress || 0}%` }}
             />
           </div>
           <p className="text-xs text-hypnen-text-dim text-center">
-            {ui.data.investigationStatus?.message || 'Processing...'}
+            {data.investigationStatus?.message || 'Processing...'}
           </p>
         </div>
       )}
@@ -221,11 +164,11 @@ export function RunAnalysisButton() {
         <ul className="text-xs text-hypnen-text-dim space-y-2">
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-hypnen-cyan flex-shrink-0 mt-1.5" />
-            <span>Backend searches NASA catalogs for matching granules</span>
+            <span>{usesNoaa ? 'Finds NOAA reporting stations inside your region' : 'Finds NASA satellite data for your region'}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-hypnen-cyan flex-shrink-0 mt-1.5" />
-            <span>Downloads and processes NetCDF/HDF5 files</span>
+            <span>{usesNoaa ? 'Retrieves and checks monthly station observations' : 'Retrieves and checks satellite data files'}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-hypnen-cyan flex-shrink-0 mt-1.5" />

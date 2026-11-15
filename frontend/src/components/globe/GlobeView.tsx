@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Viewer, Entity, Cartesian3, Color, PolygonHierarchy, Rectangle, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, Math as CesiumMath, GeoJsonDataSource, UrlTemplateImageryProvider } from 'cesium';
+import { Viewer, Entity, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, PolygonHierarchy, Rectangle, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, Math as CesiumMath, GeoJsonDataSource, UrlTemplateImageryProvider } from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { useStore } from '../../store/useStore';
 import type { GeoJSONGeometry } from '../../types';
@@ -9,7 +9,7 @@ interface GlobeViewProps {
 }
 
 export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
-  const { investigation, setGeometry, setActivePanel } = useStore();
+  const { investigation, setGeometry } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const selectionHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
@@ -17,6 +17,10 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
   const drawPositionsRef = useRef<Cartesian3[]>([]);
   const drawPolygonRef = useRef<Entity | null>(null);
   const selectedEntityRef = useRef<Entity | null>(null);
+  const selectedEntitiesRef = useRef<Entity[]>([]);
+  const entitySelectionRef = useRef<(entity: Entity) => void>(() => undefined);
+  const drawActionsRef = useRef<{ enable: () => void; disable: () => void }>({ enable: () => undefined, disable: () => undefined });
+  const boundsActionsRef = useRef<{ enable: () => void; disable: () => void }>({ enable: () => undefined, disable: () => undefined });
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [isBoundsMode, setIsBoundsMode] = useState(false);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
@@ -26,11 +30,12 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
 
   // Initialize viewer
   useEffect(() => {
-    if (!containerRef.current || viewerRef.current) return;
+    const container = containerRef.current;
+    if (!container || viewerRef.current) return;
     let cancelled = false;
 
     const initializeViewer = async () => {
-      const viewer = new Viewer(containerRef.current, {
+      const viewer = new Viewer(container, {
         animation: false,
         baseLayerPicker: false,
         fullscreenButton: false,
@@ -86,16 +91,17 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     const countryLayer = await addCountryBoundaries(viewer);
     if (cancelled || viewer.isDestroyed()) return;
     viewer.camera.flyHome(1.2);
-    if (investigation.geometry) updateSelectedPolygon(viewer, investigation.geometry);
+    const initialGeometry = useStore.getState().investigation.geometry;
+    if (initialGeometry) updateSelectedPolygon(viewer, initialGeometry);
 
     // Handle selection events
     const handler = new ScreenSpaceEventHandler(viewer.canvas);
     selectionHandlerRef.current = handler;
-    handler.setInputAction((movement) => {
+    handler.setInputAction((movement: any) => {
       const picked = viewer.scene.pick(movement.position);
       const pickedEntity = defined(picked) ? (picked.id as Entity | undefined) : undefined;
       if (!drawHandlerRef.current && pickedEntity?.polygon && countryLayer?.entities.contains(pickedEntity)) {
-        handleEntitySelection(pickedEntity);
+        entitySelectionRef.current(pickedEntity);
       }
     }, ScreenSpaceEventType.LEFT_CLICK);
 
@@ -131,7 +137,6 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
           stroke: Color.fromCssColorString('#c4e9ff').withAlpha(0.58),
           strokeWidth: 1,
           fill: Color.TRANSPARENT,
-          clampToGround: true,
         }
       );
       if (viewer.isDestroyed()) {
@@ -140,11 +145,11 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       viewer.dataSources.add(dataSource);
       dataSource.entities.values.forEach((entity) => {
         if (entity.polygon) {
-          entity.polygon.material = Color.WHITE.withAlpha(0.015);
-          entity.polygon.outline = true;
-          entity.polygon.outlineColor = Color.fromCssColorString('#c4e9ff').withAlpha(0.58);
-          entity.polygon.outlineWidth = 1;
-          entity.polygon.height = 0;
+          entity.polygon.material = new ColorMaterialProperty(Color.WHITE.withAlpha(0.015));
+          entity.polygon.outline = new ConstantProperty(true);
+          entity.polygon.outlineColor = new ConstantProperty(Color.fromCssColorString('#c4e9ff').withAlpha(0.58));
+          entity.polygon.outlineWidth = new ConstantProperty(1);
+          entity.polygon.height = new ConstantProperty(0);
         }
       });
       return dataSource;
@@ -179,6 +184,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       }
     }
   };
+  entitySelectionRef.current = handleEntitySelection;
 
   // Watch for geometry changes from sidebar
   useEffect(() => {
@@ -189,9 +195,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
 
   const updateSelectedPolygon = (viewer: Viewer, geometry: GeoJSONGeometry) => {
     // Remove existing selection
-    if (selectedEntityRef.current) {
-      viewer.entities.remove(selectedEntityRef.current);
-    }
+    selectedEntitiesRef.current.forEach((entity) => viewer.entities.remove(entity));
+    selectedEntitiesRef.current = [];
+    selectedEntityRef.current = null;
 
     if (geometry.type === 'Polygon' && geometry.coordinates) {
       const positions = geometry.coordinates[0].map((coord: number[]) =>
@@ -202,19 +208,19 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
         name: 'Selected Region',
         polygon: {
           hierarchy: new PolygonHierarchy(positions),
-          material: Color.fromCssColorString('#00d4ff').withAlpha(0.4),
-          outline: true,
-          outlineColor: Color.fromCssColorString('#00d4ff'),
-          outlineWidth: 2,
-          clampToGround: true,
+          material: new ColorMaterialProperty(Color.fromCssColorString('#00d4ff').withAlpha(0.4)),
+          outline: new ConstantProperty(true),
+          outlineColor: new ConstantProperty(Color.fromCssColorString('#00d4ff')),
+          outlineWidth: new ConstantProperty(2),
         },
       });
 
       selectedEntityRef.current = entity;
+      selectedEntitiesRef.current = [entity];
       viewer.flyTo(entity, { duration: 1.4 });
     } else if (geometry.type === 'MultiPolygon' && geometry.coordinates) {
       // Handle MultiPolygon - create multiple entities
-      geometry.coordinates.forEach((polygonCoords, idx) => {
+      geometry.coordinates.forEach((polygonCoords: number[][][], idx: number) => {
         const positions = polygonCoords[0].map((coord: number[]) =>
           Cartesian3.fromDegrees(coord[0], coord[1])
         );
@@ -223,17 +229,17 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
           name: `Selected Region ${idx + 1}`,
           polygon: {
             hierarchy: new PolygonHierarchy(positions),
-            material: Color.fromCssColorString('#00d4ff').withAlpha(0.4),
-            outline: true,
-            outlineColor: Color.fromCssColorString('#00d4ff'),
-            outlineWidth: 2,
-            clampToGround: true,
+            material: new ColorMaterialProperty(Color.fromCssColorString('#00d4ff').withAlpha(0.4)),
+            outline: new ConstantProperty(true),
+            outlineColor: new ConstantProperty(Color.fromCssColorString('#00d4ff')),
+            outlineWidth: new ConstantProperty(2),
           },
         });
 
+        selectedEntitiesRef.current.push(entity);
         if (idx === 0) selectedEntityRef.current = entity;
       });
-      viewer.flyTo(viewer.entities, { duration: 1.4 });
+      viewer.flyTo(selectedEntitiesRef.current, { duration: 1.4 });
     }
   };
 
@@ -243,9 +249,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       const { enable } = event.detail;
       setIsDrawMode(enable);
       if (enable) {
-        enableDrawMode();
+        drawActionsRef.current.enable();
       } else {
-        disableDrawMode();
+        drawActionsRef.current.disable();
       }
     };
 
@@ -279,9 +285,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     const handler = new ScreenSpaceEventHandler(viewerRef.current.canvas);
     drawHandlerRef.current = handler;
 
-    handler.setInputAction((movement) => {
+    handler.setInputAction((movement: any) => {
       const cartesian = viewerRef.current!.scene.globe.pick(
-        viewerRef.current!.camera.getPickRay(movement.position),
+        viewerRef.current!.camera.getPickRay(movement.position)!,
         viewerRef.current!.scene
       );
 
@@ -309,6 +315,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       drawPolygonRef.current = null;
     }
   };
+  drawActionsRef.current = { enable: enableDrawMode, disable: disableDrawMode };
 
   const updateDrawPolygon = () => {
     if (!viewerRef.current) return;
@@ -334,11 +341,10 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
         },
         polygon: positions.length >= 4 ? {
           hierarchy: new PolygonHierarchy(positions.slice(0, -1)),
-          material: Color.fromCssColorString('#ff6b35').withAlpha(0.2),
-          outline: true,
-          outlineColor: Color.fromCssColorString('#ff6b35'),
-          outlineWidth: 2,
-          clampToGround: true,
+          material: new ColorMaterialProperty(Color.fromCssColorString('#ff6b35').withAlpha(0.2)),
+          outline: new ConstantProperty(true),
+          outlineColor: new ConstantProperty(Color.fromCssColorString('#ff6b35')),
+          outlineWidth: new ConstantProperty(2),
         } : undefined,
       });
     }
@@ -359,6 +365,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       coordinates: [coordinates],
     };
 
+    setSelectedRegionName('Custom area');
     setGeometry(geometry);
     onGeometrySelect?.(geometry);
 
@@ -373,9 +380,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       const { enable } = event.detail;
       setIsBoundsMode(enable);
       if (enable) {
-        enableBoundsMode();
+        boundsActionsRef.current.enable();
       } else {
-        disableBoundsMode();
+        boundsActionsRef.current.disable();
       }
     };
 
@@ -392,9 +399,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     const handler = new ScreenSpaceEventHandler(viewerRef.current.canvas);
     drawHandlerRef.current = handler;
 
-    handler.setInputAction((movement) => {
+    handler.setInputAction((movement: any) => {
       const cartesian = viewerRef.current!.scene.globe.pick(
-        viewerRef.current!.camera.getPickRay(movement.position),
+        viewerRef.current!.camera.getPickRay(movement.position)!,
         viewerRef.current!.scene
       );
 
@@ -403,11 +410,11 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       }
     }, ScreenSpaceEventType.LEFT_DOWN);
 
-    handler.setInputAction((movement) => {
+    handler.setInputAction((movement: any) => {
       if (!boundsStartRef.current) return;
 
       const cartesian = viewerRef.current!.scene.globe.pick(
-        viewerRef.current!.camera.getPickRay(movement.endPosition),
+        viewerRef.current!.camera.getPickRay(movement.endPosition)!,
         viewerRef.current!.scene
       );
 
@@ -435,6 +442,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       boundsRectangleRef.current = null;
     }
   };
+  boundsActionsRef.current = { enable: enableBoundsMode, disable: disableBoundsMode };
 
   const updateBoundsRectangle = (start: Cartesian3, end: Cartesian3) => {
     if (!viewerRef.current) return;
@@ -466,7 +474,9 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
   const finalizeBoundsRectangle = () => {
     if (!boundsRectangleRef.current || !viewerRef.current) return;
 
-    const rectangle = boundsRectangleRef.current.rectangle!.coordinates.getValue(viewerRef.current.clock.currentTime);
+    const coordinateProperty = boundsRectangleRef.current.rectangle?.coordinates;
+    if (!coordinateProperty) return;
+    const rectangle = coordinateProperty.getValue(viewerRef.current.clock.currentTime);
     if (!rectangle) return;
 
     const west = CesiumMath.toDegrees(rectangle.west);
@@ -487,6 +497,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
       coordinates: [coordinates],
     };
 
+    setSelectedRegionName('Custom area');
     setGeometry(geometry);
     onGeometrySelect?.(geometry);
 
@@ -497,8 +508,10 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
   // Handle clear selection from sidebar
   useEffect(() => {
     const handleClearSelection = () => {
-      if (selectedEntityRef.current && viewerRef.current) {
-        viewerRef.current.entities.remove(selectedEntityRef.current);
+      setSelectedRegionName('');
+      if (selectedEntitiesRef.current.length && viewerRef.current) {
+        selectedEntitiesRef.current.forEach((entity) => viewerRef.current?.entities.remove(entity));
+        selectedEntitiesRef.current = [];
         selectedEntityRef.current = null;
       }
     };
@@ -511,10 +524,6 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      <div className="absolute left-4 top-4 z-20 inline-flex items-center rounded-xl border border-white/10 bg-[#081323]/90 p-1 shadow-xl backdrop-blur-xl">
-        <button onClick={() => setActivePanel('globe')} className="flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20"><span aria-hidden="true">◎</span> 3D Globe</button>
-        <button onClick={() => setActivePanel('map')} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"><span aria-hidden="true">▧</span> 2D Map</button>
-      </div>
       <div className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#081323]/90 shadow-xl backdrop-blur-xl">
         <button onClick={() => viewerRef.current?.camera.flyHome(1.2)} className="globe-control" title="Reset globe view" aria-label="Reset globe view">⌂</button>
         <button onClick={() => viewerRef.current?.camera.zoomIn(1200000)} className="globe-control text-xl" title="Zoom in" aria-label="Zoom in">+</button>
@@ -575,7 +584,7 @@ export function GlobeView({ onGeometrySelect }: GlobeViewProps) {
         <button
           onClick={() => {
             if (selectedEntityRef.current && viewerRef.current) {
-              viewerRef.current.camera.flyTo(selectedEntityRef.current, { duration: 2 });
+              viewerRef.current.flyTo(selectedEntityRef.current, { duration: 2 });
             }
           }}
           className="card p-2 rounded-lg hover:bg-hypnen-cyan/10 hover:border-hypnen-cyan/30 transition-all opacity-50"

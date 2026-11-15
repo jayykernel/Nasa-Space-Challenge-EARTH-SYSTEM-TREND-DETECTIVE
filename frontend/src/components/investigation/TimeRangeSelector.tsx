@@ -4,18 +4,22 @@ import { useStore } from '../../store/useStore';
 interface TimeRangeSelectorProps {
   timeRange: { start: string; end: string };
   temporalResolution: 'daily' | 'monthly' | 'annual' | 'seasonal';
+  datasetId: string;
 }
 
-export function TimeRangeSelector({ timeRange, temporalResolution }: TimeRangeSelectorProps) {
+export function TimeRangeSelector({ timeRange, temporalResolution, datasetId }: TimeRangeSelectorProps) {
   const { setTimeRange, setTemporalResolution } = useStore();
+  const isGpm = datasetId === 'gpm_imerg_monthly';
+  const latestDate = isGpm ? '2025-09-30' : new Date().toISOString().slice(0, 10);
+  const earliestDate = isGpm ? '2000-06-01' : '1900-01-01';
+  const latestYear = Number(latestDate.slice(0, 4));
 
   // Quick preset time ranges
   const presets = [
-    { label: 'Last 5 years', start: '2020-01-01', end: '2025-12-31' },
-    { label: 'Last 10 years', start: '2015-01-01', end: '2025-12-31' },
-    { label: 'Last 20 years', start: '2005-01-01', end: '2025-12-31' },
-    { label: 'Full record (2000+)', start: '2000-01-01', end: '2025-12-31' },
-    { label: 'Satellite era (1980+)', start: '1980-01-01', end: '2025-12-31' },
+    { label: 'Last 5 years', start: `${latestYear - 5}-10-01`, end: latestDate },
+    { label: 'Last 10 years', start: `${latestYear - 10}-10-01`, end: latestDate },
+    { label: 'Last 20 years', start: `${latestYear - 20}-10-01`, end: latestDate },
+    { label: isGpm ? 'Full record (2000+)' : 'Last 30 years', start: isGpm ? earliestDate : `${latestYear - 30}-01-01`, end: latestDate },
   ];
 
   const handlePresetClick = (preset: typeof presets[0]) => {
@@ -36,20 +40,20 @@ export function TimeRangeSelector({ timeRange, temporalResolution }: TimeRangeSe
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-hypnen-text">Time Range</h3>
+      <div><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-sky-300/70">Step 3</p><h3 className="mt-1 text-[16px] font-semibold tracking-tight text-slate-100">Choose a time period</h3><p className="mt-1 text-[11px] text-slate-400">Monthly observations are available for both sources.</p></div>
 
       {/* Preset Buttons */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-hypnen-text-dim uppercase tracking-wider">Quick Presets</label>
+        <label className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Quick presets</label>
         <div className="grid grid-cols-2 gap-2">
           {presets.map((preset) => (
             <button
               key={preset.label}
               onClick={() => handlePresetClick(preset)}
-              className={`px-3 py-2 rounded-lg border text-sm transition-all ${
+              className={`rounded-xl border px-3 py-2.5 text-[11px] font-medium transition-all ${
                 timeRange.start === preset.start && timeRange.end === preset.end
-                  ? 'bg-hypnen-cyan/20 border-hypnen-cyan text-hypnen-cyan'
-                  : 'border-hypnen-border text-hypnen-text-dim hover:border-hypnen-cyan/30 hover:text-hypnen-text hover:bg-hypnen-card'
+                  ? 'border-sky-300/30 bg-sky-300/[0.09] text-sky-100'
+                  : 'border-white/[0.07] bg-white/[0.02] text-slate-400 hover:border-sky-300/20 hover:text-slate-100'
               }`}
             >
               {preset.label}
@@ -59,70 +63,64 @@ export function TimeRangeSelector({ timeRange, temporalResolution }: TimeRangeSe
       </div>
 
       {/* Custom Date Range */}
-      <div className="space-y-4 p-4 bg-hypnen-card border border-hypnen-border rounded-lg">
-        <label className="text-xs font-medium text-hypnen-text-dim uppercase tracking-wider">Custom Range</label>
+      <div className="space-y-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
+        <label className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Custom range</label>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-hypnen-text-dim mb-1">Start Date</label>
+            <label className="mb-1.5 block text-[10px] font-medium text-slate-400">Start date</label>
             <input
               type="date"
               value={timeRange.start}
               onChange={handleStartChange}
-              min="1980-01-01"
-              max="2025-12-31"
-              className="w-full px-3 py-2 bg-hypnen-navy border border-hypnen-border rounded-lg text-hypnen-text focus:border-hypnen-cyan focus:outline-none focus:ring-1 focus:ring-hypnen-cyan"
+              min={earliestDate}
+              max={latestDate}
+              className="w-full rounded-lg border border-white/[0.09] bg-[#080e19] px-2.5 py-2.5 text-[11px] text-slate-200 focus:border-sky-300/40 focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-xs text-hypnen-text-dim mb-1">End Date</label>
+            <label className="mb-1.5 block text-[10px] font-medium text-slate-400">End date</label>
             <input
               type="date"
               value={timeRange.end}
               onChange={handleEndChange}
-              min="1980-01-01"
-              max="2025-12-31"
-              className="w-full px-3 py-2 bg-hypnen-navy border border-hypnen-border rounded-lg text-hypnen-text focus:border-hypnen-cyan focus:outline-none focus:ring-1 focus:ring-hypnen-cyan"
+              min={earliestDate}
+              max={latestDate}
+              className="w-full rounded-lg border border-white/[0.09] bg-[#080e19] px-2.5 py-2.5 text-[11px] text-slate-200 focus:border-sky-300/40 focus:outline-none"
             />
           </div>
         </div>
-        <div className="text-xs text-hypnen-text-dim mt-2">
-          Span: {calculateTimespan(timeRange.start, timeRange.end)}
+        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+          <span>Selected span</span><span className="font-medium tabular-nums text-slate-300">{calculateTimespan(timeRange.start, timeRange.end)}</span>
         </div>
       </div>
 
       {/* Temporal Resolution */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-hypnen-text-dim uppercase tracking-wider">Temporal Resolution</label>
+        <label className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Temporal resolution</label>
         <select
           value={temporalResolution}
           onChange={handleResolutionChange}
-          className="w-full px-3 py-2 bg-hypnen-card border border-hypnen-border rounded-lg text-hypnen-text focus:border-hypnen-cyan focus:outline-none focus:ring-1 focus:ring-hypnen-cyan"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2.5 text-[11px] text-slate-200 focus:border-sky-300/40 focus:outline-none"
         >
-          <option value="daily">Daily (where available)</option>
           <option value="monthly">Monthly</option>
           <option value="seasonal">Seasonal (DJF, MAM, JJA, SON)</option>
           <option value="annual">Annual</option>
         </select>
-        <p className="text-xs text-hypnen-text-dim">
+        <p className="text-[11px] leading-relaxed text-slate-400">
           {temporalResolution === 'monthly' && 'Recommended for most climate trend analyses. Balances detail with statistical power.'}
           {temporalResolution === 'seasonal' && 'Useful for detecting seasonal shifts in climate patterns.'}
           {temporalResolution === 'annual' && 'Best for long-term trend detection with minimal noise.'}
-          {temporalResolution === 'daily' && 'High frequency data. Requires large datasets and careful handling of autocorrelation.'}
         </p>
       </div>
 
       {/* Coverage Info */}
-      <div className="p-3 bg-hypnen-blue/10 border border-hypnen-blue/30 rounded-lg">
-        <h4 className="text-sm font-medium text-hypnen-blue mb-2">Dataset Coverage Notes</h4>
-        <ul className="text-xs text-hypnen-text space-y-1">
-          <li>• GPM IMERG: 2000-06 to present</li>
-          <li>• MERRA-2: 1980-01 to present</li>
-          <li>• GLDAS Noah: 2000-01 to present</li>
-          <li>• GRACE/GRACE-FO: 2002-04 to present (gap 2017-2018)</li>
-          <li>• MODIS: 2000-02 to present</li>
+      <div className="rounded-2xl border border-sky-300/10 bg-sky-300/[0.035] p-3.5">
+        <h4 className="mb-2 text-[11px] font-semibold text-sky-100">Coverage notes</h4>
+        <ul className="space-y-1 text-[10px] text-slate-300">
+          {isGpm ? <li>GPM IMERG Monthly V07B: Jun 2000 – Sep 2025</li> : <li>NOAA monthly summaries depend on nearby stations</li>}
         </ul>
-        <p className="text-xs text-hypnen-text-dim mt-2">
-          Time ranges outside dataset coverage will return no data.
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+          {isGpm ? 'This monthly dataset does not provide daily observations. Choose a date range within the available archive to avoid missing recent months.' : 'NOAA monthly station records are limited to a ten-year window per request. Longer windows are retrieved in smaller chunks and may take more time.'}
         </p>
       </div>
     </div>

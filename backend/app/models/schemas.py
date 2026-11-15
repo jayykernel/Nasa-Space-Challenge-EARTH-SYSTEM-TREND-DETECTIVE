@@ -1,34 +1,97 @@
-"""Pydantic models for API request/response schemas."""
-from datetime import datetime
+"""Validated, provider-independent API and pipeline models."""
+from __future__ import annotations
+
+from datetime import date, datetime
 from typing import Any, Literal
-from pydantic import BaseModel, Field
 
-
-class Geometry(BaseModel):
-    """GeoJSON geometry object."""
-    type: Literal["Point", "Polygon", "MultiPolygon", "Feature", "FeatureCollection"]
-    coordinates: Any = None
-    geometry: Any = None
-    properties: Any = None
-    features: Any = None
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class TimeRange(BaseModel):
-    """Temporal range for investigation."""
-    start: str = Field(..., description="Start date in YYYY-MM-DD format")
-    end: str = Field(..., description="End date in YYYY-MM-DD format")
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.end < self.start:
+            raise ValueError("time_range.end must be on or after time_range.start")
+        return self
+
+
+class AnalysisConfig(BaseModel):
+    alpha: float = Field(default=0.05, gt=0, lt=1)
+    seasonal_period: int = Field(default=12, ge=2, le=366)
 
 
 class InvestigationRequest(BaseModel):
-    """Request to start an investigation."""
-    variables: list[str] = Field(..., min_length=1, description="Environmental variables to investigate")
-    geometry: Geometry = Field(..., description="Geographical region as GeoJSON")
+    model_config = ConfigDict(extra="forbid")
+    variable: str | None = None
+    variables: list[str] = Field(default_factory=list, min_length=0)
+    geometry: dict[str, Any]
     time_range: TimeRange
     temporal_resolution: Literal["daily", "monthly", "annual", "seasonal"] = "monthly"
+    dataset_id: str | None = None
+    provider: str | None = None
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+
+    @field_validator("geometry")
+    @classmethod
+    def valid_geometry(cls, value):
+        from shapely.geometry import shape
+        from shapely.validation import explain_validity
+
+        geo = value.get("geometry") if value.get("type") == "Feature" else value
+        if not isinstance(geo, dict) or geo.get("type") not in ("Polygon", "MultiPolygon"):
+            raise ValueError("geometry must be a GeoJSON Polygon or MultiPolygon")
+        try:
+            parsed = shape(geo)
+        except Exception as exc:
+            raise ValueError(f"Invalid GeoJSON geometry: {exc}") from exc
+        if parsed.is_empty or not parsed.is_valid or parsed.area <= 0:
+            raise ValueError(f"Invalid geometry: {explain_validity(parsed)}")
+        minx, miny, maxx, maxy = parsed.bounds
+        if minx < -180 or maxx > 180 or miny < -90 or maxy > 90:
+            raise ValueError("Geometry coordinates must use WGS84 longitude/latitude")
+        return geo
+
+    @model_validator(mode="after")
+    def resolve_variables(self):
+        selected = list(dict.fromkeys(self.variables + ([self.variable] if self.variable else [])))
+        if not selected:
+            raise ValueError("Provide variable or variables")
+        if len(selected) != 1:
+            raise ValueError("This acquisition workflow currently accepts one variable per investigation")
+        self.variable = selected[0]
+        self.variables = selected
+        return self
+
+
+class AcquisitionResult(BaseModel):
+    investigation_id: str
+    provider: str
+    dataset_id: str
+    product_version: str | None = None
+    status: Literal["completed", "partial", "failed"]
+    raw_files: list[str] = Field(default_factory=list)
+    raw_format: str
+    requested_variable: str
+    requested_time_range: TimeRange
+    requested_geometry: dict[str, Any] | None = None
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
+    acquisition_metadata: dict[str, Any] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+
+
+class InvestigationStatusResponse(BaseModel):
+    investigation_id: str
+    status: Literal["queued", "retrieving_data", "validating", "normalizing", "processing", "analyzing", "completed", "partial", "failed", "cancelled"]
+    progress: int = Field(ge=0, le=100)
+    message: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class DatasetInfo(BaseModel):
-    """Information about a NASA dataset."""
     feature_id: str
     display_name: str
     mission: str
@@ -44,10 +107,10 @@ class DatasetInfo(BaseModel):
     access_endpoint: str
     processing_notes: str | None = None
     description: str
+    acquisition_status: str = "available"
 
 
 class VariableInfo(BaseModel):
-    """Environmental variable information."""
     key: str
     display_name: str
     description: str
@@ -56,76 +119,43 @@ class VariableInfo(BaseModel):
     available_coverage: str
     spatial_resolution: str
     scientific_explanation: str
+    dataset_ids: list[str] = Field(default_factory=list)
 
 
-class InvestigationStatus(BaseModel):
-    """Investigation job status."""
+class ProviderInfo(BaseModel):
     id: str
-    status: Literal["queued", "retrieving_data", "processing", "analyzing", "completed", "failed", "cancelled"]
-    progress: int = Field(ge=0, le=100, default=0)
-    message: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    name: str
+    status: str
+    details: str
 
 
-class TrendStatistics(BaseModel):
-    """Statistical trend analysis results."""
-    linear_regression: dict[str, float] = Field(default_factory=dict)
-    mann_kendall: dict[str, Any] = Field(default_factory=dict)
-    sens_slope: dict[str, Any] = Field(default_factory=dict)
-    descriptive_stats: dict[str, float] = Field(default_factory=dict)
+class ApiError(BaseModel):
+    detail: str
 
-
-class TimeSeriesData(BaseModel):
-    """Time series data point."""
-    timestamp: str
-    value: float | None
-    anomaly: float | None = None
-
-
-class SpatialResult(BaseModel):
-    """Spatial trend analysis result."""
-    grid_cell_id: str
-    lat: float
-    lon: float
-    trend_direction: Literal["increasing", "decreasing", "no_significant_trend", "insufficient_data"]
-    trend_magnitude: float | None
-    p_value: float | None
-    significance: bool
-
-
-class InvestigationResults(BaseModel):
-    """Complete investigation results."""
+class InvestigationCreatedResponse(BaseModel):
     investigation_id: str
-    dataset_metadata: list[DatasetInfo]
-    variables: list[str]
-    time_series: dict[str, list[TimeSeriesData]]
-    trend_statistics: dict[str, TrendStatistics]
-    spatial_results: dict[str, list[SpatialResult]] | None = None
-    data_quality: dict[str, Any] = Field(default_factory=dict)
-    methodology: str
-    limitations: list[str] = Field(default_factory=list)
-    completed_at: datetime
+    status: str
+    message: str
 
-
-class InvestigationReport(BaseModel):
-    """Scientific investigation report."""
-    title: str
+class InvestigationResultsResponse(BaseModel):
     investigation_id: str
-    region_description: str
+    status: Literal["completed", "partial"]
+    variable: str
     variables: list[str]
-    dataset_info: list[DatasetInfo]
-    time_period: str
-    observation_count: dict[str, int]
+    dataset_metadata: list[dict[str, Any]]
+    dataset: dict[str, Any]
+    region: dict[str, Any]
+    time_range: dict[str, str]
+    temporal_resolution: str
+    time_series: dict[str, list[dict[str, Any]]]
+    trend_statistics: dict[str, Any]
+    spatial_results: dict[str, Any]
     units: dict[str, str]
-    data_quality_summary: str
-    trend_summary: dict[str, str]
-    rate_of_change: dict[str, float]
-    statistical_significance: dict[str, bool]
-    confidence_intervals: dict[str, list[float]]
-    temporal_chart_data: dict[str, list[TimeSeriesData]]
-    spatial_visualization: str | None = None
-    interpretation: str
-    scientific_limitations: list[str]
-    data_source_citation: str
-    generated_at: datetime
+    data_quality: dict[str, Any]
+    methodology: str
+    limitations: list[str]
+    insights: list[str]
+    completed_at: datetime
+    processed_files: dict[str, str]
+    provenance: dict[str, Any]
+    report: dict[str, Any]

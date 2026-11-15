@@ -29,6 +29,7 @@ export interface VariableInfo {
   available_coverage: string;
   spatial_resolution: string;
   scientific_explanation: string;
+  dataset_ids: string[];
 }
 
 export interface DatasetInfo {
@@ -47,11 +48,12 @@ export interface DatasetInfo {
   access_endpoint: string;
   processing_notes: string | null;
   description: string;
+  acquisition_status?: string;
 }
 
 export interface InvestigationStatus {
   investigation_id: string;
-  status: 'queued' | 'retrieving_data' | 'processing' | 'analyzing' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'retrieving_data' | 'validating' | 'normalizing' | 'processing' | 'analyzing' | 'completed' | 'partial' | 'failed' | 'cancelled';
   progress: number;
   message: string | null;
 }
@@ -81,6 +83,13 @@ export interface SpatialResult {
 
 export interface InvestigationResults {
   investigation_id: string;
+  status?: 'completed' | 'partial';
+  region?: GeoJSONGeometry;
+  time_range?: TimeRange;
+  units?: Record<string, string>;
+  insights?: string[];
+  provenance?: Record<string, unknown>;
+  dataset?: { id: string; provider: string; product_version: string };
   dataset_metadata: DatasetInfo[];
   variables: string[];
   time_series: Record<string, TimeSeriesDataPoint[]>;
@@ -118,6 +127,7 @@ export interface AppState {
   // Investigation state
   investigation: {
     variables: string[];
+    datasetId: string;
     geometry: GeoJSONGeometry | null;
     timeRange: TimeRange;
     temporalResolution: 'daily' | 'monthly' | 'annual' | 'seasonal';

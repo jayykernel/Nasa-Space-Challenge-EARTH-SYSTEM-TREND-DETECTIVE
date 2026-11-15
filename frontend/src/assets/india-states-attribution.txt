@@ -1,0 +1,2 @@
+India ADM1 boundaries from geoBoundaries gbOpen, based on the DataMeet India community and Election Commission of India. CC BY 4.0; attribution required. https://www.geoboundaries.org/api/current/gbOpen/IND/ADM1/
+Simplified for interactive visualization; use the original source for authoritative boundary analysis.

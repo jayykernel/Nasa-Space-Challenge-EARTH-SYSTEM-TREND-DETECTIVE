@@ -1,180 +1,126 @@
 # Earth System Trend Detective
 
-> **NASA Space Apps Challenge 2026** — *Explore Earth. Detect Change. Understand Our Planet.*
+A React/Cesium dashboard with a FastAPI science workflow for regional precipitation time series. It supports NASA GPM IMERG Final Monthly Precipitation V07 (`GPM_3IMERGM`) gridded satellite data and NOAA CDO Global Summary of the Month (`GSOM`) station precipitation. The UI lets you choose between those sources; results keep their source-specific units and methodology.
 
-An interactive scientific investigation platform for discovering, retrieving, analyzing, and understanding environmental trends using real NASA Earth science data.
+## Run locally (PowerShell)
 
-## 🎯 Mission
+1. Install Python dependencies from the backend folder:
 
-Build a production-quality web application that allows users to:
-1. **Select** an environmental variable (rainfall, temperature, soil moisture, etc.)
-2. **Select** a geographical region using an interactive 3D Earth
-3. **Select** a historical time range
-4. **Retrieve** corresponding NASA Earth observation or model data
-5. **Extract** measurements for the selected region
-6. **Perform** scientific statistical analysis
-7. **Visualize** geographical and temporal distributions
-8. **Generate** reproducible scientific investigation reports
+   ```powershell
+   cd backend
+   python -m pip install -e ".[dev]"
+   ```
 
-## 🏗️ Architecture
+2. Copy the repository `.env.example` to `backend/.env`. NASA GPM requires an Earthdata Login username and password. NOAA station data requires `NOAA_CDO_TOKEN`. Credentials are read by the backend and are not returned by the API.
 
-```
-earth-system-trend-detective/
-├── frontend/                 # React + TypeScript + Vite
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── globe/       # CesiumJS 3D Earth
-│   │   │   ├── maps/        # LeafletJS 2D scientific maps
-│   │   │   ├── dashboard/   # Results & visualizations
-│   │   │   ├── investigation/ # Sidebar controls
-│   │   │   ├── layout/      # Header, UI components
-│   │   │   └── ui/          # Loading, error, shared UI
-│   │   ├── services/        # API client
-│   │   ├── store/           # Zustand state management
-│   │   ├── types/           # TypeScript types
-│   │   └── hooks/           # Custom React hooks
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── tailwind.config.js
-├── backend/                  # Python + FastAPI
-│   ├── app/
-│   │   ├── api/             # REST endpoints
-│   │   ├── connectors/      # NASA data connectors
-│   │   │   ├── base.py      # Abstract base connector
-│   │   │   ├── gpm.py       # GPM IMERG precipitation
-│   │   │   ├── merra2.py    # MERRA-2 atmospheric
-│   │   │   └── gldas.py     # GLDAS land surface
-│   │   ├── registry/        # Dataset registry
-│   │   ├── processing/      # Data processing
-│   │   │   ├── spatial.py   # Spatial extraction
-│   │   │   └── analytics.py # Statistical analysis
-│   │   ├── models/          # Pydantic schemas
-│   │   └── main.py          # FastAPI app
-│   └── pyproject.toml
-├── tests/                    # Unit, integration, scientific tests
-├── docs/                     # Documentation
-├── .env.example             # Environment template
-└── README.md
-```
+3. Start the API in a PowerShell window:
 
-## 🛰️ NASA Data Integrations
+   ```powershell
+   cd backend
+   python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+   ```
 
-| Variable | Dataset | Mission | Coverage | Resolution |
-|----------|---------|---------|----------|------------|
-| **Precipitation** | GPM IMERG Final Run V07 Monthly | GPM | 2000-06 → present | 0.1° (~11 km) |
-| **Air Temperature** | MERRA-2 M2TMNXSLV | MERRA-2 | 1980-01 → present | 0.5° × 0.625° |
-| **Specific Humidity** | MERRA-2 M2TMNXSLV | MERRA-2 | 1980-01 → present | 0.5° × 0.625° |
-| **Relative Humidity** | MERRA-2 M2TMNXSLV | MERRA-2 | 1980-01 → present | 0.5° × 0.625° |
-| **Soil Moisture** | GLDAS Noah V2.1 | GLDAS | 2000-01 → present | 0.25° (~25 km) |
-| **Evapotranspiration** | GLDAS Noah V2.1 | GLDAS | 2000-01 → present | 0.25° |
-| **Surface Runoff** | GLDAS Noah V2.1 | GLDAS | 2000-01 → present | 0.25° |
-| **Subsurface Runoff** | GLDAS Noah V2.1 | GLDAS | 2000-01 → present | 0.25° |
+4. Install frontend dependencies and start the dashboard in another window:
 
-*Planned: GRACE/GRACE-FO (Terrestrial Water Storage), MODIS (NDVI/EVI)*
+   ```powershell
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-## 📊 Statistical Analysis
+   Open [http://localhost:3000](http://localhost:3000). Vite forwards `/api` calls to the local API. API documentation is at [http://localhost:8001/docs](http://localhost:8001/docs).
 
-- **Linear Regression**: Rate of change, R², uncertainty
-- **Mann-Kendall Test**: Monotonic trend detection, p-values
-- **Seasonal Mann-Kendall**: Accounts for seasonal cycles
-- **Sen's Slope**: Robust trend magnitude with confidence intervals
-- **Descriptive Statistics**: Mean, median, std, percentiles, missing data %
-- **Autocorrelation**: Ljung-Box test for temporal dependence
-- **Seasonal Decomposition**: Trend, seasonal, residual components
+## Deploy
 
-## 🚀 Quick Start
+The frontend can be deployed as a Vite static app on Vercel from the `frontend/` directory. `frontend/vercel.json` enables direct links to saved investigations. Set the Vercel build-time environment variable `VITE_API_BASE_URL` to the deployed backend origin (for example, `https://your-api.onrender.com`, without `/api/v1`).
 
-### Prerequisites
-- Node.js 18+
-- Python 3.10+
-- NASA Earthdata account (for data access)
+The analysis API needs a persistent host and disk: it downloads multi-gigabyte NASA archives and stores job state and reusable source files on disk. `render.yaml` and `backend/Dockerfile` define a Render web service with a 1 CPU / 2 GB plan and a 20 GB persistent disk. In Render, set `CORS_ORIGINS` to the exact Vercel site origin and enter the NASA Earthdata credentials; add `NOAA_CDO_TOKEN` if NOAA analysis is needed. Do not commit secrets to this repository.
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-# Open http://localhost:3000
+The configured Render resources are currently estimated at about **US$30/month** before tax: US$25/month for 1 CPU / 2 GB and US$5/month for the 20 GB disk. The Vercel Hobby plan is free for personal projects. Confirm current provider pricing before creating resources.
+
+## Investigation workflow
+
+The browser sends an application-level GeoJSON request. The API validates date range, geometry, variable and dataset before saving a job in SQLite. A background worker:
+
+1. Uses `earthaccess` to search NASA CMR for GPM IMERG monthly V07 granules, or NOAA CDO v2 to discover nearby stations and retrieve GSOM monthly PRCP observations. Raw responses are preserved under the investigation's source-specific folder.
+2. Checks HDF5 signatures, file size, readability, units, coordinates and timestamps; duplicate file checksums are removed.
+3. Reads only the selected region's bounding window from each global granule, retains source attributes and source units, and builds a common `time, lat, lon` xarray dataset.
+4. Computes an area-weighted regional mean for GPM grids or an equal-weight mean of NOAA stations inside the selected polygon. GPM monthly mean rates are day-weighted into annual/seasonal rates; NOAA monthly accumulation totals are summed. It will not turn monthly measurements into daily measurements.
+5. Calculates Mann–Kendall, Seasonal Mann–Kendall, Sen slope and confidence bounds, linear regression, descriptive statistics and a detrended lag-1 autocorrelation diagnostic. When serial dependence is flagged, the Mann–Kendall variance gets an approximate AR(1) correction; its limitations are included in the report.
+6. Stores the clipped normalized grid under `backend/data/processed/normalized/`, cleaned and aggregated CSV series under their matching processed folders, acquisition provenance under `backend/data/metadata/acquisition_records/`, and reproducible results/report JSON under `backend/data/results/investigations/`. SQLite retains job status and result JSON across restarts. A worker interrupted by a backend restart is marked failed, not complete.
+7. A finished investigation can be reopened by adding `?investigation=<id>` to the app URL; the results panel has a copy-link action for sharing it within the same local deployment.
+
+No sample values or placeholder statistics are used in production responses. A retrieval, file-validation or normalization failure marks the job failed. Missing time intervals are surfaced as partial coverage.
+
+## Request example
+
+```json
+{
+  "variable": "precipitation",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[76, 8], [79, 8], [79, 11], [76, 11], [76, 8]]]
+  },
+  "time_range": { "start": "2005-01-01", "end": "2025-12-31" },
+  "temporal_resolution": "monthly"
+}
 ```
 
-### Backend
-```bash
+Legacy frontend requests with `variables: ["precipitation"]` remain accepted. Regions must be valid WGS84 Polygon or MultiPolygon geometries.
+
+## API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/v1/health` | Service status and supported variables |
+| GET | `/api/v1/variables` | Variables with a working acquisition path |
+| GET | `/api/v1/variables/{key}` | Variable metadata |
+| GET | `/api/v1/datasets` | Verified dataset metadata |
+| GET | `/api/v1/providers` | Implemented and unavailable provider integrations |
+| POST | `/api/v1/analysis` | Validate request, create persistent investigation and queue worker |
+| GET | `/api/v1/analysis/{id}/status` | Poll status, progress and failure detail |
+| GET | `/api/v1/analysis/{id}/results` | Retrieve completed or partial measurements and analytics |
+| GET | `/api/v1/analysis/{id}/map` | Per-grid-cell spatial trend data |
+| GET | `/api/v1/analysis/{id}/report?format=json\|csv\|pdf` | Download report/observations |
+| POST | `/api/v1/analysis/{id}/cancel` | Cancel an unfinished job |
+
+## Storage and retention
+
+Raw HDF5 granules, processed results and SQLite job state are kept under `backend/data/`. They are excluded from Git. Raw files are immutable once downloaded. Duplicate contents within an investigation are detected with SHA-256. Validated granules are also cached by NASA CMR granule identifier and reused by later investigations; each investigation keeps its own reference. There is no automatic deletion; operators can remove terminal investigations and cached granules unused for the selected retention period with:
+
+```powershell
 cd backend
-pip install -e .  # or poetry install
-cp .env.example .env
-# Edit .env with your NASA Earthdata credentials
-uvicorn app.main:app --reload --port 8000
-# API at http://localhost:8000
-# Docs at http://localhost:8000/docs
+python -m app.storage.retention --older-than-days 90
 ```
 
-## 🔐 NASA Earthdata Authentication
+Set `EARTH_DATA_DIR` or `EARTH_JOBS_DB` to move storage. Set `CORS_ORIGINS` to the exact frontend origins in deployment.
 
-1. Create account at [https://urs.earthdata.nasa.gov/](https://urs.earthdata.nasa.gov/)
-2. Authorize applications: GPM, MERRA-2, GLDAS data access
-3. Set credentials in `.env`:
-```bash
-NASA_EARTHDATA_USERNAME=your_username
-NASA_EARTHDATA_PASSWORD=your_password
+## Providers and scientific limitations
+
+- **NASA Earthdata / GPM IMERG:** implemented for CMR discovery and Earthdata-authenticated granule downloads. The 2005–2025 Tamil Nadu run was completed against live NASA data with 249 monthly observations. It is marked partial because no granules were returned for October–December 2025.
+- **NOAA CDO:** implemented for GSOM monthly PRCP station records. Coverage depends on stations inside the selected polygon; the regional mean is not a continuous area-weighted grid. Longer windows require more requests and may take longer.
+- **NASA AppEEARS, Giovanni, NASA Hydrology Time Series:** not implemented in this release; see `/api/v1/providers` for current status.
+
+The globe supports country selection, location search, freehand polygons and rectangles. Administrative selection currently provides India ADM1 states and union territories. Its simplified GeoJSON is bundled from geoBoundaries gbOpen (CC BY 4.0, attribution in `frontend/src/assets/india-states-attribution.txt`).
+- The GPM IMERG monthly granules cover the globe, so catalog granules are intersected via their spatial bounds and the pipeline clips measurements to the selected polygon locally. A full multi-decade request can download a large archive; start with a shorter period to evaluate storage and runtime.
+- Current autocorrelation handling uses a transparent approximate AR(1) correction for the Mann–Kendall variance, not a full seasonal model. Sen confidence bounds are not autocorrelation corrected. Statistical association does not establish causation.
+
+Product references: [NASA CMR GPM_3IMERGM V07 collection](https://cmr.earthdata.nasa.gov/search/site/collections/directory/GES_DISC/gov.nasa.eosdis), [NASA IMERG V07 technical documentation](https://gpm.nasa.gov/resources/documents/imerg-v07-technical-documentation), and [NASA Earthaccess granule search guide](https://earthaccess.readthedocs.io/en/latest/user/explanation/search/). The V07 monthly product's recommended variable is `Grid/precipitation`; its monthly values are mean rates in mm/hr. The source variable and units are still checked on each retrieved file. The current V07B archive in NASA's catalog extends through September 2025; later dates are accepted by the API but may return partial coverage until new granules are published.
+
+## Verification
+
+Backend unit and API contract tests:
+
+```powershell
+cd backend
+pytest -q
 ```
 
-## 🛠️ Development Phases
+Frontend type check and production bundle:
 
-- [x] **Phase 0**: Repository inspection & structure
-- [x] **Phase 1**: Data access proof (GPM IMERG)
-- [x] **Phase 2**: Scientific processing pipeline
-- [x] **Phase 3**: Backend API & investigation engine
-- [x] **Phase 4**: Frontend foundation & dark theme
-- [x] **Phase 5**: CesiumJS 3D Earth integration
-- [x] **Phase 6**: LeafletJS scientific maps
-- [ ] **Phase 7**: End-to-end integration
-- [ ] **Phase 8**: Additional datasets (MERRA-2, GLDAS)
-- [ ] **Phase 9**: Final validation & testing
-- [ ] **Phase 10**: Demo preparation & submission
+```powershell
+cd frontend
+npm run build
+```
 
-## 🎨 Design System
-
-**Dark HYPHEN-inspired theme:**
-- Background: `#0a0e17` (navy/black)
-- Cards: `#161b22` (dark card)
-- Borders: `#2a323c` (subtle borders)
-- Primary: `#00d4ff` (cyan)
-- Secondary: `#1e90ff` (blue)
-- Success: `#00b894` (teal)
-- Warning: `#f39c12` (yellow)
-- Danger: `#e74c3c` (red)
-- Text: `#e6edf3` (light)
-- Muted: `#8b949e` (dim)
-
-## 📝 Scientific Integrity
-
-This application follows strict scientific standards:
-- ✅ Never fabricates NASA measurements
-- ✅ Never presents synthetic values as real results
-- ✅ Clearly distinguishes evidence, statistics, interpretation
-- ✅ Never claims causation from correlation
-- ✅ Communicates uncertainty and limitations
-- ✅ Provides full data provenance and citations
-
-## 📚 Documentation
-
-- [Architecture](docs/architecture.md)
-- [Datasets](docs/datasets.md)
-- [Data Access](docs/data_access.md)
-- [Methodology](docs/methodology.md)
-- [API Reference](docs/api.md)
-- [Demo Script](docs/demo_script.md)
-
-## 🤝 Contributing
-
-This is a NASA Space Apps Challenge 2026 submission. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## 📄 License
-
-MIT License — Built for NASA Space Apps Challenge 2026.
-
----
-
-**Built with ❤️ for Earth science**
-
-*Earth System Trend Detective — Explore Earth. Detect Change. Understand Our Planet.*
+The frontend repository does not currently define a separate automated test command. Provider credentials are not needed for the controlled test suite.

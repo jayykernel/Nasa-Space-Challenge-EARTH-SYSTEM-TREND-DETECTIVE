@@ -14,6 +14,7 @@ import type {
 interface StoreState extends AppState {
   // Actions
   setVariables: (variables: string[]) => void;
+  setDatasetId: (datasetId: string) => void;
   setGeometry: (geometry: GeoJSONGeometry | null) => void;
   setTimeRange: (timeRange: TimeRange) => void;
   setTemporalResolution: (resolution: 'daily' | 'monthly' | 'annual' | 'seasonal') => void;
@@ -33,8 +34,9 @@ interface StoreState extends AppState {
 const initialState: AppState = {
   investigation: {
     variables: [],
+    datasetId: 'gpm_imerg_monthly',
     geometry: null,
-    timeRange: { start: '2000-01-01', end: '2025-12-31' },
+    timeRange: { start: '2005-01-01', end: '2025-09-30' },
     temporalResolution: 'monthly',
   },
   ui: {
@@ -60,6 +62,9 @@ export const useStore = create<StoreState>()(
         set((state) => ({
           investigation: { ...state.investigation, variables },
         })),
+
+      setDatasetId: (datasetId) =>
+        set((state) => ({ investigation: { ...state.investigation, datasetId } })),
 
       setGeometry: (geometry) =>
         set((state) => ({
@@ -134,6 +139,7 @@ export const useStore = create<StoreState>()(
         }
         return {
           variables: investigation.variables,
+          dataset_id: investigation.datasetId,
           geometry: investigation.geometry,
           time_range: investigation.timeRange,
           temporal_resolution: investigation.temporalResolution,

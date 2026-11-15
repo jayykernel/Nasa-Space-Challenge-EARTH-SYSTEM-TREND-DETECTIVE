@@ -70,6 +70,8 @@ frontend/dist/
 frontend/build/
 frontend/.vite/
 frontend/*.local
+.vercel/
+frontend/.vercel/
 
 # Backend data cache
 backend/data/

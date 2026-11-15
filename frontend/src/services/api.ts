@@ -1,9 +1,12 @@
 /** API service for communicating with the backend */
 
-const API_BASE = '/api/v1';
+const configuredApiOrigin = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '');
+const API_BASE = `${configuredApiOrigin || ''}/api/v1`;
 
 export interface InvestigationRequest {
   variables: string[];
+  dataset_id?: string;
+  provider?: string;
   geometry: GeoJSONGeometry;
   time_range: { start: string; end: string };
   temporal_resolution: 'daily' | 'monthly' | 'annual' | 'seasonal';
@@ -25,14 +28,23 @@ export interface InvestigationResponse {
 
 export interface InvestigationStatus {
   investigation_id: string;
-  status: 'queued' | 'retrieving_data' | 'processing' | 'analyzing' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'retrieving_data' | 'validating' | 'normalizing' | 'processing' | 'analyzing' | 'completed' | 'partial' | 'failed' | 'cancelled';
   progress: number;
   message: string | null;
 }
 
 export interface InvestigationResults {
   investigation_id: string;
+  dataset_metadata: DatasetInfo[];
+  status?: 'completed' | 'partial';
+  region?: GeoJSONGeometry;
+  time_range?: { start: string; end: string };
+  units?: Record<string, string>;
+  insights?: string[];
+  provenance?: Record<string, unknown>;
+  dataset?: { id: string; provider: string; product_version: string };
   variables: string[];
+  time_series: Record<string, any[]>;
   trend_statistics: Record<string, any>;
   spatial_results: Record<string, any[]> | null;
   data_quality: Record<string, any>;
@@ -156,14 +168,14 @@ class ApiService {
   async pollInvestigation(
     investigationId: string,
     onProgress: (status: InvestigationStatus) => void,
-    maxAttempts = 300,
-    intervalMs = 1000
+    maxAttempts = 3600,
+    intervalMs = 2000
   ): Promise<InvestigationResults> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const status = await this.getInvestigationStatus(investigationId);
       onProgress(status);
 
-      if (status.status === 'completed') {
+      if (status.status === 'completed' || status.status === 'partial') {
         return this.getInvestigationResults(investigationId);
       }
 

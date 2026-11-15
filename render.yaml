@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: earth-system-trend-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: 1c-2g
+    healthCheckPath: /api/v1/health
+    disk:
+      name: earth-observation-data
+      mountPath: /var/data
+      sizeGB: 20
+    envVars:
+      - key: EARTH_DATA_DIR
+        value: /var/data
+      - key: CORS_ORIGINS
+        sync: false
+      - key: NASA_EARTHDATA_USERNAME
+        sync: false
+      - key: NASA_EARTHDATA_PASSWORD
+        sync: false
+      - key: NOAA_CDO_TOKEN
+        sync: false

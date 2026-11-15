@@ -1,38 +1,37 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import { InvestigationSidebar } from './components/investigation/InvestigationSidebar';
-import { GlobeView } from './components/globe/GlobeView';
-import { MapView } from './components/maps/MapView';
 import { ResultsPanel } from './components/dashboard/ResultsPanel';
 import { Header } from './components/layout/Header';
 import { LoadingOverlay } from './components/ui/LoadingOverlay';
 import { ErrorToast } from './components/ui/ErrorToast';
 import type { VariableInfo } from './types';
+import { api } from './services/api';
+import type { InvestigationResults as AppInvestigationResults } from './types';
+
+const GlobeView = lazy(() => import('./components/globe/GlobeView').then((module) => ({ default: module.GlobeView })));
+const MapView = lazy(() => import('./components/maps/MapView').then((module) => ({ default: module.MapView })));
 
 const FALLBACK_VARIABLES: VariableInfo[] = [
-  { key: 'precipitation', display_name: 'Rainfall / Precipitation', description: 'Precipitation rate from satellite observations.', unit: 'mm/day', data_source: 'GPM IMERG', available_coverage: '2000-06 to present', spatial_resolution: '0.1°', scientific_explanation: 'Satellite estimate of rain and other precipitation.' },
-  { key: 'temperature', display_name: 'Air Temperature', description: 'Near-surface air temperature at 2 meters.', unit: '°C', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Long-term atmospheric reanalysis of near-surface temperature.' },
-  { key: 'specific_humidity', display_name: 'Specific Humidity', description: 'Mass of water vapor per mass of moist air.', unit: 'kg/kg', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Measure of atmospheric moisture content.' },
-  { key: 'relative_humidity', display_name: 'Relative Humidity', description: 'Ratio of actual to saturation water vapor pressure.', unit: '%', data_source: 'MERRA-2', available_coverage: '1980-01 to present', spatial_resolution: '0.5° × 0.625°', scientific_explanation: 'Measure of how close air is to saturation.' },
-  { key: 'soil_moisture', display_name: 'Soil Moisture', description: 'Volumetric water content in the upper soil layer.', unit: 'm³/m³', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of water stored in surface soils.' },
-  { key: 'evapotranspiration', display_name: 'Evapotranspiration', description: 'Water flux from the land surface to the atmosphere.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Combined evaporation from soil and transpiration from plants.' },
-  { key: 'runoff', display_name: 'Surface Runoff', description: 'Water flowing over the land surface.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of surface water runoff.' },
-  { key: 'subsurface_runoff', display_name: 'Subsurface Runoff (Baseflow)', description: 'Water flow through the subsurface.', unit: 'mm/day', data_source: 'GLDAS Noah', available_coverage: '2000-01 to present', spatial_resolution: '0.25°', scientific_explanation: 'Model estimate of subsurface flow to streams.' },
-  { key: 'terrestrial_water_storage', display_name: 'Terrestrial Water Storage Anomaly', description: 'Changes in total water stored on land.', unit: 'cm equivalent water height', data_source: 'GRACE / GRACE-FO', available_coverage: '2002-04 to present', spatial_resolution: '0.5°', scientific_explanation: 'Satellite observation of integrated land water storage changes.' },
-  { key: 'ndvi', display_name: 'NDVI', description: 'Satellite-derived vegetation greenness index.', unit: 'Dimensionless', data_source: 'MODIS', available_coverage: '2000-02 to present', spatial_resolution: '1 km', scientific_explanation: 'Vegetation index derived from red and near-infrared reflectance.' },
-  { key: 'evi', display_name: 'EVI', description: 'Enhanced satellite-derived vegetation index.', unit: 'Dimensionless', data_source: 'MODIS', available_coverage: '2000-02 to present', spatial_resolution: '1 km', scientific_explanation: 'Vegetation index designed to reduce atmospheric and soil effects.' },
+  { key: 'precipitation', display_name: 'Rainfall / Precipitation', description: 'Compare NASA satellite measurements with NOAA station records.', unit: 'Dataset units', data_source: 'NASA GPM IMERG or NOAA GHCN', available_coverage: 'Dataset-specific', spatial_resolution: 'Global 0.1° grid or station network', scientific_explanation: 'Select a global gridded satellite product or station observations for the selected region.', dataset_ids: ['gpm_imerg_monthly', 'noaa_ghcn_monthly_precipitation'] },
 ];
 
 function App() {
   const {
     ui,
-    investigation,
     data,
-    setActivePanel,
     setSidebarOpen,
-    setLoading,
     setError,
     setAvailableVariables,
+    setLoading,
+    setInvestigationStatus,
+    setInvestigationResults,
+    setInvestigationReport,
+    setGeometry,
+    setTimeRange,
+    setVariables,
+    setDatasetId,
+    setActivePanel,
   } = useStore();
 
   const [backendConnected, setBackendConnected] = useState(false);
@@ -58,37 +57,79 @@ function App() {
     loadVariables();
   }, [setAvailableVariables, setError]);
 
+  // A saved investigation can be reopened directly from its shareable URL.
+  useEffect(() => {
+    const investigationId = new URLSearchParams(window.location.search).get('investigation');
+    if (!investigationId) return;
+    const savedId = investigationId;
+    let cancelled = false;
+    async function loadSavedInvestigation() {
+      setLoading(true);
+      try {
+        const status = await api.getInvestigationStatus(savedId);
+        if (cancelled) return;
+        setInvestigationStatus(status);
+        if (status.status === 'completed' || status.status === 'partial') {
+          const [results, report] = await Promise.all([
+            api.getInvestigationResults(savedId),
+            api.getInvestigationReport(savedId),
+          ]);
+          if (cancelled) return;
+          setInvestigationResults(results as unknown as AppInvestigationResults);
+          setInvestigationReport(report);
+          if (results.region) setGeometry(results.region);
+          if (report.region_description) window.dispatchEvent(new CustomEvent('globe-region-name', { detail: { name: report.region_description } }));
+          if (results.time_range) setTimeRange(results.time_range);
+          setVariables(results.variables);
+          if (results.dataset?.id) setDatasetId(results.dataset.id);
+          setActivePanel('results');
+        }
+      } catch (error) {
+        if (!cancelled) setError(error instanceof Error ? error.message : 'Could not load the saved investigation');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void loadSavedInvestigation();
+    return () => { cancelled = true; };
+  }, [setActivePanel, setDatasetId, setError, setGeometry, setInvestigationReport, setInvestigationResults, setInvestigationStatus, setLoading, setTimeRange, setVariables]);
+
   return (
-    <div className="h-full min-h-0 w-full flex flex-col overflow-hidden">
-      <Header onToggleSidebar={() => setSidebarOpen(!ui.sidebarOpen)} sidebarOpen={ui.sidebarOpen} backendConnected={backendConnected} />
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#070c14]">
+      <Header onToggleSidebar={() => setSidebarOpen(!ui.sidebarOpen)} sidebarOpen={ui.sidebarOpen} backendConnected={backendConnected} activePanel={ui.activePanel} onPanelChange={setActivePanel} hasResults={Boolean(data.currentInvestigation)} />
 
       <main className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Left Sidebar - Investigation Controls */}
         {ui.sidebarOpen && (
-          <aside className="z-10 w-80 min-h-0 flex-shrink-0 border-r border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up">
+          <aside className="z-10 w-[min(360px,88vw)] min-h-0 flex-shrink-0 border-r border-white/[0.08] bg-[#0a111d] transition-all duration-300 animate-slide-up xl:w-[352px]">
             <InvestigationSidebar />
           </aside>
         )}
 
         {/* Center - Globe/Map View */}
         <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-          {ui.activePanel === 'globe' && <GlobeView />}
-          {ui.activePanel === 'map' && <MapView />}
+          {ui.activePanel === 'globe' && <Suspense fallback={<ViewLoading label="Preparing the 3D globe…" />}><GlobeView /></Suspense>}
+          {ui.activePanel === 'map' && <Suspense fallback={<ViewLoading label="Preparing the map…" />}><MapView /></Suspense>}
+          {ui.activePanel === 'results' && <div className="h-full overflow-hidden"><ResultsPanel /></div>}
         </section>
 
         {/* Right Panel - Results */}
-        <aside className="z-10 hidden w-96 min-h-0 flex-shrink-0 border-l border-hypnen-border bg-hypnen-dark transition-all duration-300 animate-slide-up xl:block">
+        <aside className={`z-10 hidden w-[400px] min-h-0 flex-shrink-0 border-l border-white/[0.08] bg-[#0a111d] transition-all duration-300 animate-slide-up xl:block ${ui.activePanel === 'results' ? '!hidden' : ''}`}>
           <ResultsPanel />
         </aside>
       </main>
 
       {/* Loading Overlay */}
-      {ui.loading && <LoadingOverlay message="Processing investigation..." />}
+      {ui.loading && <LoadingOverlay progress={data.investigationStatus?.progress ?? 0} message={data.investigationStatus?.message || 'Starting the investigation…'} />}
 
       {/* Error Toast */}
       {ui.error && <ErrorToast message={ui.error} onDismiss={() => setError(null)} />}
     </div>
   );
+}
+
+function ViewLoading({ label }: { label: string }) {
+  return <div className="flex h-full items-center justify-center bg-[#030812] text-sm text-slate-300"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />{label}</div>;
 }
 
 export default App;
